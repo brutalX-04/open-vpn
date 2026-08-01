@@ -9,6 +9,7 @@ import os
 import sys
 import io
 import json
+import html
 import logging
 import random
 import datetime
@@ -67,6 +68,14 @@ def is_admin(user_id: int) -> bool:
 
 def format_rupiah(val: int) -> str:
     return f"Rp {val:,.0f}".replace(",", ".")
+
+def format_aligned_rows(rows) -> str:
+    """Return Telegram-safe, monospaced key/value rows with aligned labels."""
+    width = max(len(label) for label, _ in rows)
+    return "\n".join(
+        f"{label:<{width}} : {html.escape(str(value))}"
+        for label, value in rows
+    )
 
 def get_xendit_gateway() -> XenditPaymentGateway:
     config = load_config()
@@ -148,19 +157,25 @@ def start(update: Update, context: CallbackContext):
     ram_used = ram.get("used_mb", 0)
     ram_total = ram.get("total_mb", 0)
     user_counts = s_data.get("user_counts", {})
+    identity = format_aligned_rows([
+        ("User ID", user.id),
+        ("Nama", user.first_name),
+    ])
+    server_info = format_aligned_rows([
+        ("Host / IP", ip),
+        ("Domain", domain),
+        ("Uptime", uptime),
+        ("RAM", f"{ram_used} MB / {ram_total} MB"),
+        ("SSH User", user_counts.get("ssh", 0)),
+        ("Xray User", user_counts.get("xray", 0)),
+    ])
 
     msg = f"""<b>SYSTEM STORE VPN PREMIUM</b>
 
-User ID: <code>{user.id}</code>
-Nama: <b>{user.first_name}</b>
+<pre>{identity}</pre>
 
 <b>INFORMASI SERVER VPS</b>
-Host / IP: <code>{ip}</code>
-Domain: <code>{domain}</code>
-Uptime: <code>{uptime}</code>
-RAM: <code>{ram_used} MB / {ram_total} MB</code>
-SSH User: <code>{user_counts.get('ssh', 0)}</code>
-Xray User: <code>{user_counts.get('xray', 0)}</code>
+<pre>{server_info}</pre>
 
 Silakan pilih layanan di bawah ini:"""
 
