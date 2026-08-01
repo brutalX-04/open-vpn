@@ -44,20 +44,22 @@ warn()    { echo -e "${BYELLOW}[!] ${NC}${1}"; }
 bold()    { echo -e "${BWHITE}${1}${NC}"; }
 
 # ── Divider / Header ───────────────────────────────────────
+UI_WIDTH=58
+
 divider() {
-    echo -e "${CYAN}------------------------------------------------${NC}"
+    printf "${CYAN}%${UI_WIDTH}s${NC}\n" "" | tr ' ' '-'
 }
 
 header() {
     local title="${1}"
     divider
-    printf "${BG_BLUE}${BWHITE}%*s${NC}\n" $(( (${#title} + 48) / 2 )) "${title}"
+    printf "${BCYAN}%*s${NC}\n" $(( (UI_WIDTH + ${#title}) / 2 )) "${title}"
     divider
 }
 
 section() {
-    echo -e ""
-    echo -e "${BCYAN}--- ${1} ------------------------------------------${NC}"
+    echo ""
+    echo -e "  ${BYELLOW}${1}${NC}"
 }
 
 status_line() {
