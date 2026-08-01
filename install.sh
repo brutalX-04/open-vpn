@@ -68,6 +68,8 @@ if [[ ! -f "${SCRIPT_DIR}/scripts/menu/main.sh" || ! -f "${SCRIPT_DIR}/scripts/a
 fi
 
 cp -a "${SCRIPT_DIR}/scripts/." /etc/vpn/scripts/
+# Shared UI library is loaded by every menu from /etc/vpn/lib.
+cp -a "${SCRIPT_DIR}/scripts/lib/." /etc/vpn/lib/
 
 if [[ -d "${SCRIPT_DIR}/bot" ]]; then
     mkdir -p /etc/vpn/bot
@@ -156,12 +158,21 @@ systemctl enable --now ssh cron nginx dropbear stunnel4 fail2ban &>/dev/null || 
 # ── Install BadVPN UDPGW ───────────────────────────────────
 echo -e "${GREEN}[INFO] Memasang BadVPN UDPGW (Ports 7100, 7200, 7300)...${NC}"
 if [[ -f "${SCRIPT_DIR}/bin/badvpn-udpgw" ]]; then
-    cp "${SCRIPT_DIR}/bin/badvpn-udpgw" /usr/bin/badvpn-udpgw
+    install -m 755 "${SCRIPT_DIR}/bin/badvpn-udpgw" /usr/bin/badvpn-udpgw
 else
-    # Fallback compilation/download if binary not present locally
-    wget -qO /usr/bin/badvpn-udpgw "https://raw.githubusercontent.com/brutalX-04/open-vpn/main/bin/badvpn-udpgw" 2>/dev/null || true
+    # Fallback when the installer was obtained without the complete repository.
+    BADVPN_TMP="$(mktemp)"
+    if wget -qO "${BADVPN_TMP}" "https://raw.githubusercontent.com/brutalX-04/open-vpn/main/bin/badvpn-udpgw" \
+        && [[ -s "${BADVPN_TMP}" ]]; then
+        install -m 755 "${BADVPN_TMP}" /usr/bin/badvpn-udpgw
+    fi
+    rm -f "${BADVPN_TMP}"
 fi
-chmod +x /usr/bin/badvpn-udpgw 2>/dev/null
+
+if [[ ! -x /usr/bin/badvpn-udpgw ]]; then
+    echo -e "${RED}[ERROR] Binary BadVPN UDPGW tidak tersedia. Pastikan folder bin/ ikut terunduh.${NC}"
+    exit 1
+fi
 
 # Create BadVPN Service
 cat > /etc/systemd/system/badvpn-7100.service <<EOF
@@ -423,7 +434,7 @@ ln -sf /etc/vpn/scripts/system/restart.sh /usr/bin/restart-service
 ln -sf /etc/vpn/scripts/system/vpn-tendang /usr/local/bin/vpn-tendang
 ln -sf /etc/vpn/scripts/api/cli.py /usr/bin/vpn-cli
 
-chmod +x /etc/vpn/scripts/lib/*.sh 2>/dev/null
+chmod +x /etc/vpn/lib/*.sh 2>/dev/null
 chmod +x /etc/vpn/scripts/*/*.sh 2>/dev/null
 chmod +x /etc/vpn/scripts/system/vpn-tendang 2>/dev/null
 chmod +x /etc/vpn/scripts/api/cli.py 2>/dev/null
