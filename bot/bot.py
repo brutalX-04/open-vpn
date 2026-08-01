@@ -77,6 +77,12 @@ def format_aligned_rows(rows) -> str:
         for label, value in rows
     )
 
+def send_config_file(message, content: str, filename: str, caption: str) -> None:
+    """Send long connection data as a downloadable file instead of wrapped chat text."""
+    document = io.BytesIO(content.encode("utf-8"))
+    document.name = filename
+    message.reply_document(document=document, filename=filename, caption=caption)
+
 def get_xendit_gateway() -> XenditPaymentGateway:
     config = load_config()
     xendit = config.get("xendit", {})
@@ -166,8 +172,8 @@ def start(update: Update, context: CallbackContext):
         ("Domain", domain),
         ("Uptime", uptime),
         ("RAM", f"{ram_used} MB / {ram_total} MB"),
-        ("SSH User", user_counts.get("ssh", 0)),
-        ("Xray User", user_counts.get("xray", 0)),
+        ("Akun SSH", user_counts.get("ssh", 0)),
+        ("Klien Xray", user_counts.get("xray", 0)),
     ])
 
     msg = f"""<b>SYSTEM STORE VPN PREMIUM</b>
@@ -482,21 +488,30 @@ Payload:
 Catatan: HTTP Custom/WS memerlukan proxy WebSocket yang aktif di server.
 
 <b>2. VMESS WS TLS</b>
-<code>{vmess_acc.get('links', {}).get('ws_tls')}</code>
+Konfigurasi: <code>vmess-ws-tls.txt</code>
 
 <b>3. VLESS WS TLS</b>
-<code>{vless_acc.get('links', {}).get('ws_tls')}</code>
+Konfigurasi: <code>vless-ws-tls.txt</code>
 
 <b>4. TROJAN WSS TLS</b>
-<code>{trojan_acc.get('links', {}).get('ws_tls')}</code>
+Konfigurasi: <code>trojan-wss-tls.txt</code>
 
 <b>5. OPENVPN UDP FAST</b>
 Remote: <code>{domain}:{ovpn_port}</code>
 Protocol: <code>UDP</code>
 Profile: <code>{ovpn_profile}</code>
-Catatan: gunakan file profil <code>.ovpn</code> untuk terhubung."""
+Status: file profil dikirim sebagai dokumen."""
 
         query.message.reply_text(msg, parse_mode=ParseMode.HTML)
+        send_config_file(query.message, vmess_acc.get("links", {}).get("ws_tls", ""), "vmess-ws-tls.txt", "VMess WS TLS")
+        send_config_file(query.message, vless_acc.get("links", {}).get("ws_tls", ""), "vless-ws-tls.txt", "VLESS WS TLS")
+        send_config_file(query.message, trojan_acc.get("links", {}).get("ws_tls", ""), "trojan-wss-tls.txt", "Trojan WSS TLS")
+        send_config_file(
+            query.message,
+            ovpn_udp_acc.get("content", ""),
+            ovpn_profile,
+            "OpenVPN UDP profile",
+        )
     else:
         release_trial_reservation(user_id)
         query.message.reply_text("Gagal membuat paket trial.", parse_mode=ParseMode.HTML)
