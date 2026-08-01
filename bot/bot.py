@@ -34,9 +34,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 TRIAL_LOG_FILE = os.path.join(BASE_DIR, "trial_users.json")
 
-sys.path.append(os.path.dirname(BASE_DIR))
+# The bot is executed directly by systemd (`python3 bot.py`), so its parent
+# directory must take precedence when importing the sibling CLI package.
+sys.path.insert(0, os.path.dirname(BASE_DIR))
 from scripts.api import cli
-from bot.xendit_gateway import XenditPaymentGateway
+from xendit_gateway import XenditPaymentGateway
 
 def load_config() -> Dict[str, Any]:
     if os.path.exists(CONFIG_FILE):
@@ -147,24 +149,20 @@ def start(update: Update, context: CallbackContext):
     ram_total = ram.get("total_mb", 0)
     user_counts = s_data.get("user_counts", {})
 
-    msg = f"""========================================
-SYSTEM STORE VPN PREMIUM
-========================================
+    msg = f"""<b>SYSTEM STORE VPN PREMIUM</b>
 
-User ID : <code>{user.id}</code>
-Name    : <b>{user.first_name}</b>
+User ID: <code>{user.id}</code>
+Nama: <b>{user.first_name}</b>
 
-[ INFORMASI SERVER VPS ]
-----------------------------------------
-Host / IP : <code>{ip}</code>
-Domain    : <code>{domain}</code>
-Uptime    : <code>{uptime}</code>
-RAM       : <code>{ram_used} MB / {ram_total} MB</code>
-SSH User  : <code>{user_counts.get('ssh', 0)} User</code>
-Xray User : <code>{user_counts.get('xray', 0)} User</code>
-----------------------------------------
+<b>INFORMASI SERVER VPS</b>
+Host / IP: <code>{ip}</code>
+Domain: <code>{domain}</code>
+Uptime: <code>{uptime}</code>
+RAM: <code>{ram_used} MB / {ram_total} MB</code>
+SSH User: <code>{user_counts.get('ssh', 0)}</code>
+Xray User: <code>{user_counts.get('xray', 0)}</code>
 
-Silakan pilih opsi layanan di bawah ini:"""
+Silakan pilih layanan di bawah ini:"""
 
     keyboard = [
         [
@@ -216,16 +214,13 @@ def buy_menu(update: Update, context: CallbackContext):
 
     p_name = proto_names.get(proto, proto.upper())
 
-    msg = f"""========================================
-PEMBELIAN AKUN {p_name.upper()}
-========================================
+    msg = f"""<b>PEMBELIAN AKUN {p_name.upper()}</b>
 
 Pilih durasi masa aktif yang diinginkan:
 
 - 7 Hari (1 Minggu)  : {format_rupiah(prices.get('7', 5000))}
 - 14 Hari (2 Minggu) : {format_rupiah(prices.get('14', 9000))}
-- 30 Hari (1 Bulan)  : {format_rupiah(prices.get('30', 15000))}
-----------------------------------------"""
+- 30 Hari (1 Bulan)  : {format_rupiah(prices.get('30', 15000))}"""
 
     keyboard = [
         [
@@ -281,20 +276,17 @@ def select_duration(update: Update, context: CallbackContext):
 
     context.user_data["pending_tx"] = tx_data
 
-    caption_msg = f"""========================================
-PEMBAYARAN AUTOMATIC QR CODE
-========================================
+    caption_msg = f"""<b>PEMBAYARAN QRIS OTOMATIS</b>
 
-Invoice ID : <code>{inv_id}</code>
-Layanan    : {proto.upper()} ({days} Hari)
-Total      : <b>{format_rupiah(amount)}</b>
-Status     : PENDING PAYMENT
+Invoice ID: <code>{inv_id}</code>
+Layanan: {proto.upper()} ({days} Hari)
+Total: <b>{format_rupiah(amount)}</b>
+Status: PENDING PAYMENT
 
-PETUNJUK PEMBAYARAN QR CODE:
+<b>PETUNJUK PEMBAYARAN</b>
 1. Scan QRIS di atas menggunakan aplikasi pembayaran yang mendukung QRIS.
 2. Selesaikan pembayaran sesuai nominal yang tertera.
-3. Klik tombol 'Cek Pembayaran' setelah berhasil.
-----------------------------------------"""
+3. Klik tombol 'Cek Pembayaran' setelah berhasil."""
 
     keyboard = [
         [
@@ -360,14 +352,13 @@ def check_payment(update: Update, context: CallbackContext):
         config = cli.get_config()
         domain = config.get("DOMAIN", "N/A")
 
-        out_msg = f"""========================================
-AKUN VPN BERHASIL DIBUAT
-========================================
-Username   : <code>{data.get('username', username)}</code>
-Masa Aktif : <code>{days} Hari</code>
-Expired    : <code>{data.get('expired', 'N/A')}</code>
-Domain     : <code>{domain}</code>
-----------------------------------------\n"""
+        out_msg = f"""<b>AKUN VPN BERHASIL DIBUAT</b>
+
+Username: <code>{data.get('username', username)}</code>
+Masa aktif: <code>{days} Hari</code>
+Expired: <code>{data.get('expired', 'N/A')}</code>
+Domain: <code>{domain}</code>
+\n"""
 
         if proto == 'ssh':
             out_msg += f"""DETAIL SSH & WEBSOCKET:
@@ -441,33 +432,54 @@ def create_trial(update: Update, context: CallbackContext):
         vmess_acc = accs.get("vmess", {})
         vless_acc = accs.get("vless", {})
         trojan_acc = accs.get("trojan", {})
+        ovpn_udp_acc = accs.get("ovpn-udp", {})
 
         config = cli.get_config()
         domain = config.get("DOMAIN", "N/A")
+        ip = ssh_acc.get("ip", config.get("IP", domain))
+        ssh_ports = ssh_acc.get("ports", {})
+        ssh_port = ssh_ports.get("ssh", "22")
+        dropbear_port = ssh_ports.get("dropbear", "143,109")
+        http_port = ssh_ports.get("ws", "80")
+        https_port = ssh_ports.get("ssl_ws", "443")
+        ovpn_port = ovpn_udp_acc.get("port", "1194")
+        ovpn_profile = os.path.basename(ovpn_udp_acc.get("file_path", "profil UDP tidak tersedia"))
 
-        msg = f"""========================================
-PAKET TRIAL ALL-IN-ONE (3 JAM)
-========================================
-Username   : <code>{t_user}</code>
-Masa Aktif : <code>3 Jam</code>
-Domain     : <code>{domain}</code>
-----------------------------------------
+        msg = f"""<b>PAKET TRIAL ALL-IN-ONE — 3 JAM</b>
 
-1. SSH & OPENSSH
-Password : <code>{ssh_acc.get('password')}</code>
-Port WS  : <code>80</code> | SSL: <code>443</code>
+Username: <code>{t_user}</code>
+Masa aktif: <code>3 Jam</code>
+Server: <code>{domain}</code>
 
-2. VMESS WS TLS
+<b>1. SSH &amp; OPENSSH</b>
+Host/IP: <code>{ip}</code>
+Username: <code>{ssh_acc.get('username', t_user)}</code>
+Password: <code>{ssh_acc.get('password')}</code>
+OpenSSH: <code>{ssh_port}</code>
+Dropbear: <code>{dropbear_port}</code>
+
+<b>HTTP CUSTOM / SSH WEBSOCKET</b>
+Port HTTP: <code>{http_port}</code>
+Port HTTPS: <code>{https_port}</code>
+Host / SNI: <code>{domain}</code>
+Payload:
+<code>GET / HTTP/1.1[crlf]\nHost: {domain}[crlf]\nUpgrade: websocket[crlf][crlf]</code>
+Catatan: HTTP Custom/WS memerlukan proxy WebSocket yang aktif di server.
+
+<b>2. VMESS WS TLS</b>
 <code>{vmess_acc.get('links', {}).get('ws_tls')}</code>
 
-3. VLESS WS TLS
+<b>3. VLESS WS TLS</b>
 <code>{vless_acc.get('links', {}).get('ws_tls')}</code>
 
-4. TROJAN WSS TLS
+<b>4. TROJAN WSS TLS</b>
 <code>{trojan_acc.get('links', {}).get('ws_tls')}</code>
 
-5. OPENVPN UDP FAST
-Remote: <code>{domain}:1194 (UDP)</code>"""
+<b>5. OPENVPN UDP FAST</b>
+Remote: <code>{domain}:{ovpn_port}</code>
+Protocol: <code>UDP</code>
+Profile: <code>{ovpn_profile}</code>
+Catatan: gunakan file profil <code>.ovpn</code> untuk terhubung."""
 
         query.message.reply_text(msg, parse_mode=ParseMode.HTML)
     else:
@@ -483,9 +495,8 @@ def admin_panel(update: Update, context: CallbackContext):
         query.message.reply_text("Akses ditolak. Pengguna bukan admin.", parse_mode=ParseMode.HTML)
         return
 
-    msg = """========================================
-PANEL ADMINISTRATOR
-========================================
+    msg = """<b>PANEL ADMINISTRATOR</b>
+
 Pilih menu konfigurasi admin:"""
 
     keyboard = [
@@ -508,15 +519,14 @@ def admin_price_menu(update: Update, context: CallbackContext):
     config = load_config()
     prices = config.get("prices", {})
 
-    msg = f"""========================================
-KONFIGURASI HARGA PRODUK
-========================================
+    msg = f"""<b>KONFIGURASI HARGA PRODUK</b>
+
 SSH    : 7d={prices.get('ssh',{}).get('7')}, 14d={prices.get('ssh',{}).get('14')}, 30d={prices.get('ssh',{}).get('30')}
 Vmess  : 7d={prices.get('vmess',{}).get('7')}, 14d={prices.get('vmess',{}).get('14')}, 30d={prices.get('vmess',{}).get('30')}
 Vless  : 7d={prices.get('vless',{}).get('7')}, 14d={prices.get('vless',{}).get('14')}, 30d={prices.get('vless',{}).get('30')}
 Trojan : 7d={prices.get('trojan',{}).get('7')}, 14d={prices.get('trojan',{}).get('14')}, 30d={prices.get('trojan',{}).get('30')}
 OVPN   : 7d={prices.get('ovpn',{}).get('7')}, 14d={prices.get('ovpn',{}).get('14')}, 30d={prices.get('ovpn',{}).get('30')}
-----------------------------------------
+
 Untuk mengubah harga produk, edit file /etc/vpn/bot/config.json"""
 
     keyboard = [[InlineKeyboardButton("Kembali", callback_data="admin_panel")]]
