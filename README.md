@@ -9,11 +9,16 @@
 ## Instalasi
 
 ```bash
-apt update -y && apt install -y curl wget
-wget https://raw.githubusercontent.com/brutalX-04/open-vpn/main/install.sh
+apt update -y && apt install -y git curl wget
+cd /opt
+git clone https://github.com/brutalX-04/open-vpn.git
+cd open-vpn
 chmod +x install.sh
 ./install.sh
 ```
+
+Jalankan installer dari folder repository hasil clone. Installer membutuhkan folder
+`scripts/`, `bot/`, dan `bin/` selain file `install.sh`.
 
 Installer akan meminta domain/subdomain dan, secara opsional, token serta admin ID Telegram.
 
