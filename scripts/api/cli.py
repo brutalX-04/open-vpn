@@ -184,9 +184,41 @@ def create_user(proto, username, days=None, hours=None, password=None):
     elif proto in ['ovpn-tcp', 'ovpn-udp']:
         sub_proto = "tcp" if proto == "ovpn-tcp" else "udp"
         port_val = config.get(f"PORT_OVPN_{sub_proto.upper()}", "1194")
-        
+
         os.makedirs(CLIENT_DIR, exist_ok=True)
         ovpn_file = os.path.join(CLIENT_DIR, f"{username}-{sub_proto}.ovpn")
+
+        cert_file = os.path.join(CA_DIR, "pki", "issued", f"{username}.crt")
+        key_file = os.path.join(CA_DIR, "pki", "private", f"{username}.key")
+        if not (os.path.exists(cert_file) and os.path.exists(key_file)):
+            # Easy-RSA certificates are valid for at least one day. Account
+            # cleanup still revokes them based on the profile expiry metadata.
+            cert_days = max(1, int(days or 1))
+            ok, _, err = run_cmd(
+                f"cd '{CA_DIR}' && EASYRSA_CERT_EXPIRE={cert_days} "
+                f"./easyrsa --batch build-client-full '{username}' nopass"
+            )
+            if not ok:
+                return {"status": "error", "message": f"Failed creating OpenVPN certificate: {err}"}
+
+        required_files = {
+            "CA certificate": os.path.join(CA_DIR, "pki", "ca.crt"),
+            "client certificate": cert_file,
+            "client key": key_file,
+            "TLS auth key": os.path.join(OVPN_DIR, "ta.key"),
+        }
+        missing = [label for label, path in required_files.items() if not os.path.exists(path)]
+        if missing:
+            return {"status": "error", "message": f"Missing OpenVPN files: {', '.join(missing)}"}
+
+        with open(required_files["CA certificate"], encoding="utf-8") as handle:
+            ca_cert = handle.read().strip()
+        with open(required_files["client certificate"], encoding="utf-8") as handle:
+            client_cert = handle.read().strip()
+        with open(required_files["client key"], encoding="utf-8") as handle:
+            client_key = handle.read().strip()
+        with open(required_files["TLS auth key"], encoding="utf-8") as handle:
+            tls_auth = handle.read().strip()
         
         ovpn_content = f"""client
 dev tun
@@ -204,6 +236,18 @@ key-direction 1
 verb 3
 
 # Expired: {exp_display}
+<ca>
+{ca_cert}
+</ca>
+<cert>
+{client_cert}
+</cert>
+<key>
+{client_key}
+</key>
+<tls-auth>
+{tls_auth}
+</tls-auth>
 """
         with open(ovpn_file, 'w') as f:
             f.write(ovpn_content)
