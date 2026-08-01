@@ -22,18 +22,18 @@ clear
 header "SYSTEM AUTOSCRIPT VPN PREMIUM"
 
 section "INFORMASI SERVER"
-printf "  ${BWHITE}%-12s${NC} ${CYAN}%-17s${NC} ${BWHITE}%-9s${NC} ${CYAN}%s${NC}\n" \
-    "IP / Host" "${MYIP:-N/A}" "Domain" "${DOMAIN:-N/A}"
-printf "  ${BWHITE}%-12s${NC} %-17s ${BWHITE}%-9s${NC} ${CYAN}%s${NC}\n" \
-    "Uptime" "${UPTIME}" "RAM" "${USED_RAM}/${TOTAL_RAM} MB"
-printf "  ${BWHITE}%-12s${NC} ${CYAN}%-17s${NC} ${BWHITE}%-9s${NC} ${CYAN}%s${NC}\n" \
-    "CPU" "${CPU}%" "Tanggal" "${TODAY_DATE}"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "IP / Host" "${MYIP:-N/A}"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "Domain" "${DOMAIN:-N/A}"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "Uptime" "${UPTIME}"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "RAM" "${USED_RAM}/${TOTAL_RAM} MB"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "CPU" "${CPU}%"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "Tanggal" "${TODAY_DATE}"
 
 section "KONEKSI AKTIF"
-printf "  ${BWHITE}%-12s${NC} ${CYAN}%-17s${NC} ${BWHITE}%-9s${NC} ${CYAN}%s${NC}\n" \
-    "SSH User" "${SSH_COUNT}" "Xray" "${VMESS_COUNT}"
-printf "  ${BWHITE}%-12s${NC} ${CYAN}%-17s${NC} ${BWHITE}%-9s${NC} ${CYAN}%s${NC}\n" \
-    "OVPN TCP" "${OVPN_TCP}" "OVPN UDP" "${OVPN_UDP}"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "SSH User" "${SSH_COUNT}"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "Xray User" "${VMESS_COUNT}"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "OVPN TCP" "${OVPN_TCP}"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "OVPN UDP" "${OVPN_UDP}"
 
 section "MENU LAYANAN"
 echo -e "  ${BCYAN}[1]${NC}  ${BWHITE}SSH${NC}          Kelola akun SSH"
