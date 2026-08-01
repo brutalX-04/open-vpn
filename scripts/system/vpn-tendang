@@ -1,0 +1,19 @@
+#!/bin/bash
+# Enforce the maximum number of interactive OpenSSH sessions per account.
+
+set -eu
+MAX_SESSIONS="${1:-1}"
+[[ "${MAX_SESSIONS}" =~ ^[1-9][0-9]*$ ]] || exit 2
+
+# who -u reports the session leader PID in column 6. Keep the oldest sessions
+# and terminate every newer session belonging to the same account.
+while IFS= read -r username; do
+    mapfile -t pids < <(who -u | awk -v user="${username}" '$1 == user && $6 ~ /^[0-9]+$/ {print $6}' | sort -n -u)
+    if (( ${#pids[@]} <= MAX_SESSIONS )); then
+        continue
+    fi
+    for ((i=MAX_SESSIONS; i<${#pids[@]}; i++)); do
+        kill -TERM "${pids[i]}" 2>/dev/null || true
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] SESSION-LIMIT | ssh | user=${username} pid=${pids[i]}" >> /var/log/vpn/session-limit.log
+    done
+done < <(who -u | awk '$1 != "root" {print $1}' | sort -u)

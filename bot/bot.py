@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ============================================================
 #  bot/bot.py — Telegram Bot VPN Store
-#  Automatic Payment: QR Code Payment (DANA Payment Gateway QRIS)
+#  Automatic Payment: Xendit Payments API v3 (QRIS)
 #  Design: Clean, Professional, No Emojis
 # ============================================================
 
@@ -12,6 +12,7 @@ import json
 import logging
 import random
 import datetime
+import fcntl
 from typing import Dict, Any
 
 import qrcode
@@ -35,7 +36,7 @@ TRIAL_LOG_FILE = os.path.join(BASE_DIR, "trial_users.json")
 
 sys.path.append(os.path.dirname(BASE_DIR))
 from scripts.api import cli
-from bot.dana_gateway import DanaPaymentGateway
+from bot.xendit_gateway import XenditPaymentGateway
 
 def load_config() -> Dict[str, Any]:
     if os.path.exists(CONFIG_FILE):
@@ -44,7 +45,7 @@ def load_config() -> Dict[str, Any]:
     return {
         "bot_token": "",
         "admin_ids": [],
-        "dana_gateway": {"merchant_id": "", "client_id": "", "client_secret": "", "environment": "sandbox"},
+        "xendit": {"secret_key": ""},
         "prices": {
             "ssh": {"7": 5000, "14": 9000, "30": 15000},
             "vmess": {"7": 6000, "14": 10000, "30": 18000},
@@ -65,15 +66,10 @@ def is_admin(user_id: int) -> bool:
 def format_rupiah(val: int) -> str:
     return f"Rp {val:,.0f}".replace(",", ".")
 
-def get_dana_gateway() -> DanaPaymentGateway:
+def get_xendit_gateway() -> XenditPaymentGateway:
     config = load_config()
-    dg = config.get("dana_gateway", {})
-    return DanaPaymentGateway(
-        merchant_id=dg.get("merchant_id", ""),
-        client_id=dg.get("client_id", ""),
-        client_secret=dg.get("client_secret", ""),
-        env=dg.get("environment", "sandbox")
-    )
+    xendit = config.get("xendit", {})
+    return XenditPaymentGateway(secret_key=xendit.get("secret_key", ""))
 
 def generate_qr_image_bytes(qr_data: str) -> io.BytesIO:
     """Generates QR code PNG image in memory buffer"""
@@ -91,6 +87,49 @@ def generate_qr_image_bytes(qr_data: str) -> io.BytesIO:
     img.save(buf, format='PNG')
     buf.seek(0)
     return buf
+
+def reserve_trial(user_id: int) -> bool:
+    """Atomically reserve one trial for a Telegram user on the server date."""
+    lock_path = f"{TRIAL_LOG_FILE}.lock"
+    today = datetime.date.today().isoformat()
+    with open(lock_path, "a+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            with open(TRIAL_LOG_FILE, "r") as handle:
+                trials = json.load(handle)
+        except (FileNotFoundError, json.JSONDecodeError):
+            trials = {}
+        last_trial = trials.get(str(user_id))
+        if isinstance(last_trial, (int, float)):
+            last_trial = datetime.datetime.fromtimestamp(last_trial).date().isoformat()
+        if last_trial == today:
+            return False
+        trials[str(user_id)] = today
+        temp_file = f"{TRIAL_LOG_FILE}.tmp"
+        with open(temp_file, "w") as handle:
+            json.dump(trials, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_file, TRIAL_LOG_FILE)
+        return True
+
+def release_trial_reservation(user_id: int) -> None:
+    """Allow a retry only when creating the reserved trial failed."""
+    lock_path = f"{TRIAL_LOG_FILE}.lock"
+    today = datetime.date.today().isoformat()
+    with open(lock_path, "a+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            with open(TRIAL_LOG_FILE, "r") as handle:
+                trials = json.load(handle)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return
+        if trials.get(str(user_id)) == today:
+            trials.pop(str(user_id), None)
+            temp_file = f"{TRIAL_LOG_FILE}.tmp"
+            with open(temp_file, "w") as handle:
+                json.dump(trials, handle)
+            os.replace(temp_file, TRIAL_LOG_FILE)
 
 # ── Command Handlers ────────────────────────────────────────
 
@@ -216,9 +255,9 @@ def select_duration(update: Update, context: CallbackContext):
     amount = config.get("prices", {}).get(proto, {}).get(str(days), 10000)
     inv_id = f"INV{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-    # Generate QR Code order from DANA Payment Gateway
-    dana = get_dana_gateway()
-    success, order_res = dana.create_order(inv_id=inv_id, amount=amount, title=f"Purchase {proto.upper()} {days}D")
+    # Create a dynamic QRIS payment request through Xendit Payments API v3.
+    xendit = get_xendit_gateway()
+    success, order_res = xendit.create_order(reference_id=inv_id, amount=amount, title=f"Purchase {proto.upper()} {days}D")
 
     if not success:
         query.edit_message_text(f"Gagal memproses QR Code Payment Gateway: {order_res.get('error')}", parse_mode=ParseMode.HTML)
@@ -252,7 +291,7 @@ Total      : <b>{format_rupiah(amount)}</b>
 Status     : PENDING PAYMENT
 
 PETUNJUK PEMBAYARAN QR CODE:
-1. Scan QR Code di atas menggunakan aplikasi DANA / QRIS.
+1. Scan QRIS di atas menggunakan aplikasi pembayaran yang mendukung QRIS.
 2. Selesaikan pembayaran sesuai nominal yang tertera.
 3. Klik tombol 'Cek Pembayaran' setelah berhasil.
 ----------------------------------------"""
@@ -294,9 +333,9 @@ def check_payment(update: Update, context: CallbackContext):
     proto = tx_data["proto"]
     days = tx_data["days"]
 
-    # Verify payment status against DANA Payment Gateway API
-    dana = get_dana_gateway()
-    is_paid, status_str = dana.check_order_status(inv_id=inv_id, order_id=order_id)
+    # Verify the current status with Xendit before provisioning an account.
+    xendit = get_xendit_gateway()
+    is_paid, status_str = xendit.check_order_status(payment_request_id=order_id)
 
     if not is_paid:
         query.answer(f"Status Pembayaran QR Code: {status_str}. Silakan tuntaskan Scan QR Code terlebih dahulu.", show_alert=True)
@@ -375,24 +414,15 @@ def create_trial(update: Update, context: CallbackContext):
     query.answer()
     user_id = query.from_user.id
 
-    trials = {}
-    if os.path.exists(TRIAL_LOG_FILE):
-        with open(TRIAL_LOG_FILE, 'r') as f:
-            trials = json.load(f)
-
-    last_time = trials.get(str(user_id))
-    now_ts = datetime.datetime.now().timestamp()
-
-    if last_time and (now_ts - last_time < 86400):
-        remaining_hrs = int((86400 - (now_ts - last_time)) // 3600)
+    if not reserve_trial(user_id):
         try:
             query.edit_message_text(
-                f"Anda telah membuat trial hari ini. Batas coba lagi dalam {remaining_hrs} jam.",
+                "Anda telah membuat trial hari ini. Coba lagi setelah pergantian tanggal server.",
                 parse_mode=ParseMode.HTML
             )
         except:
             query.message.reply_text(
-                f"Anda telah membuat trial hari ini. Batas coba lagi dalam {remaining_hrs} jam.",
+                "Anda telah membuat trial hari ini. Coba lagi setelah pergantian tanggal server.",
                 parse_mode=ParseMode.HTML
             )
         return
@@ -406,10 +436,6 @@ def create_trial(update: Update, context: CallbackContext):
     res = cli.create_trial_bundle(t_user, hours=3)
 
     if res.get("status") == "success":
-        trials[str(user_id)] = now_ts
-        with open(TRIAL_LOG_FILE, 'w') as f:
-            json.dump(trials, f)
-
         accs = res.get("accounts", {})
         ssh_acc = accs.get("ssh", {})
         vmess_acc = accs.get("vmess", {})
@@ -445,6 +471,7 @@ Remote: <code>{domain}:1194 (UDP)</code>"""
 
         query.message.reply_text(msg, parse_mode=ParseMode.HTML)
     else:
+        release_trial_reservation(user_id)
         query.message.reply_text("Gagal membuat paket trial.", parse_mode=ParseMode.HTML)
 
 # ── Admin Panel ─────────────────────────────────────────────
@@ -463,7 +490,7 @@ Pilih menu konfigurasi admin:"""
 
     keyboard = [
         [InlineKeyboardButton("Ubah Harga Produk", callback_data="admin_price_menu")],
-        [InlineKeyboardButton("Konfigurasi DANA Gateway", callback_data="admin_dana_cfg")],
+        [InlineKeyboardButton("Konfigurasi Xendit", callback_data="admin_xendit_cfg")],
         [InlineKeyboardButton("Kembali ke Menu Utama", callback_data="start_menu")]
     ]
 

@@ -1,11 +1,8 @@
 {
   "bot_token": "BOT_TOKEN_HERE",
   "admin_ids": [123456789],
-  "dana_gateway": {
-    "merchant_id": "",
-    "client_id": "",
-    "client_secret": "",
-    "environment": "sandbox"
+  "xendit": {
+    "secret_key": ""
   },
   "prices": {
     "ssh": {

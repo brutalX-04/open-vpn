@@ -231,6 +231,9 @@ push "dhcp-option DNS 8.8.4.4"
 keepalive 10 120
 tls-auth /etc/openvpn/ta.key 0
 crl-verify /etc/openvpn/crl.pem
+script-security 2
+client-connect /etc/vpn/scripts/system/openvpn-single-session.sh connect
+client-disconnect /etc/vpn/scripts/system/openvpn-single-session.sh disconnect
 cipher AES-256-CBC
 auth SHA512
 user nobody
@@ -259,6 +262,9 @@ push "dhcp-option DNS 8.8.4.4"
 keepalive 10 120
 tls-auth /etc/openvpn/ta.key 0
 crl-verify /etc/openvpn/crl.pem
+script-security 2
+client-connect /etc/vpn/scripts/system/openvpn-single-session.sh connect
+client-disconnect /etc/vpn/scripts/system/openvpn-single-session.sh disconnect
 cipher AES-256-CBC
 auth SHA512
 user nobody
@@ -375,6 +381,31 @@ systemctl daemon-reload
 systemctl enable --now vpn-expiry-cleanup.timer
 systemctl start vpn-expiry-cleanup.service
 
+cat > /etc/systemd/system/vpn-session-limit.service <<'EOF'
+[Unit]
+Description=Enforce VPN account session limits
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vpn-tendang 1
+EOF
+
+cat > /etc/systemd/system/vpn-session-limit.timer <<'EOF'
+[Unit]
+Description=Check SSH session limits every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=vpn-session-limit.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now vpn-session-limit.timer
+
 # ── Symlinks to /usr/bin for CLI Commands ─────────────────
 ln -sf /etc/vpn/scripts/menu/main.sh /usr/bin/menu
 ln -sf /etc/vpn/scripts/menu/menu-ssh.sh /usr/bin/menu-ssh
@@ -383,10 +414,12 @@ ln -sf /etc/vpn/scripts/menu/menu-ovpn.sh /usr/bin/menu-ovpn
 ln -sf /etc/vpn/scripts/system/status.sh /usr/bin/running
 ln -sf /etc/vpn/scripts/system/status.sh /usr/bin/status
 ln -sf /etc/vpn/scripts/system/restart.sh /usr/bin/restart-service
+ln -sf /etc/vpn/scripts/system/vpn-tendang /usr/local/bin/vpn-tendang
 ln -sf /etc/vpn/scripts/api/cli.py /usr/bin/vpn-cli
 
 chmod +x /etc/vpn/scripts/lib/*.sh 2>/dev/null
 chmod +x /etc/vpn/scripts/*/*.sh 2>/dev/null
+chmod +x /etc/vpn/scripts/system/vpn-tendang 2>/dev/null
 chmod +x /etc/vpn/scripts/api/cli.py 2>/dev/null
 chmod +x /etc/vpn/bot/bot.py 2>/dev/null
 chmod +x /usr/bin/menu* /usr/bin/running /usr/bin/status /usr/bin/vpn-cli 2>/dev/null
