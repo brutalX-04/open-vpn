@@ -86,7 +86,26 @@ Nginx, Dropbear, dan Stunnel dipasang tetapi installer ini belum menulis konfigu
 
 ## Bot Telegram
 
-Konfigurasi berada di `/etc/vpn/bot/config.json`. Setelah mengubah token atau admin ID:
+Saat instalasi, masukkan token bot dan Admin User ID bila sudah tersedia. Installer juga akan menawarkan konfigurasi DANA Payment Gateway. Ini adalah kredensial merchant resmi, **bukan** nomor akun DANA pribadi:
+
+- `merchant_id`, `client_id`, dan `client_secret` diperoleh dari portal/integrasi DANA Business setelah akun merchant dan akses API disetujui.
+- Gunakan `sandbox` untuk pengujian dan `production` hanya dengan kredensial produksi yang aktif.
+- Ketiga kredensial wajib diisi agar bot dapat membuat QR dan memverifikasi pembayaran. Tanpa ketiganya, bot menolak pembayaran DANA dan tidak akan membuat akun otomatis.
+
+Konfigurasi disimpan di `/etc/vpn/bot/config.json`:
+
+```json
+{
+  "dana_gateway": {
+    "merchant_id": "MERCHANT_ID_DARI_DANA",
+    "client_id": "CLIENT_ID_DARI_DANA",
+    "client_secret": "CLIENT_SECRET_DARI_DANA",
+    "environment": "sandbox"
+  }
+}
+```
+
+Jaga `client_secret` tetap rahasia; jangan kirimkan ke chat atau commit ke repository. Setelah mengubah token, admin ID, atau konfigurasi DANA:
 
 ```bash
 systemctl enable --now bot-vpn
