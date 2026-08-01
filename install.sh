@@ -93,21 +93,17 @@ echo -e "${CYAN}── Pengaturan Telegram Bot ───────────
 read -rp "Masukkan Telegram Bot Token (Opsional / Tap Enter jika nanti): " BOT_TOKEN
 read -rp "Masukkan Telegram Admin User ID (Opsional / Tap Enter jika nanti): " ADMIN_ID
 echo ""
-echo "Konfigurasi DANA Payment Gateway (opsional; hanya untuk merchant DANA resmi)."
-echo "Kosongkan semua kolom jika belum memiliki kredensial DANA Gateway."
-read -rp "DANA Merchant ID: " DANA_MERCHANT_ID
-read -rp "DANA Client ID: " DANA_CLIENT_ID
-read -rsp "DANA Client Secret: " DANA_CLIENT_SECRET
+echo "Konfigurasi Xendit (opsional; untuk pembayaran QRIS otomatis)."
+echo "Kosongkan jika Xendit akan dikonfigurasi nanti."
+read -rsp "Xendit Secret API Key: " XENDIT_SECRET_KEY
 echo ""
-read -rp "Environment DANA [sandbox/production] (default: sandbox): " DANA_ENV
-DANA_ENV="${DANA_ENV:-sandbox}"
 
 if [[ -f "/etc/vpn/bot/config.json" ]]; then
-    python3 - /etc/vpn/bot/config.json "${BOT_TOKEN}" "${ADMIN_ID}" "${DANA_MERCHANT_ID}" "${DANA_CLIENT_ID}" "${DANA_CLIENT_SECRET}" "${DANA_ENV}" <<'PYEOF'
+    python3 - /etc/vpn/bot/config.json "${BOT_TOKEN}" "${ADMIN_ID}" "${XENDIT_SECRET_KEY}" <<'PYEOF'
 import json
 import sys
 
-config_path, bot_token, admin_id, merchant_id, client_id, client_secret, environment = sys.argv[1:]
+config_path, bot_token, admin_id, xendit_secret_key = sys.argv[1:]
 with open(config_path, 'r') as handle:
     cfg = json.load(handle)
 if bot_token:
@@ -117,12 +113,9 @@ if admin_id:
         cfg['admin_ids'] = [int(admin_id)]
     except ValueError:
         pass
-if merchant_id or client_id or client_secret:
-    gateway = cfg.setdefault('dana_gateway', {})
-    gateway['merchant_id'] = merchant_id
-    gateway['client_id'] = client_id
-    gateway['client_secret'] = client_secret
-    gateway['environment'] = environment if environment in ('sandbox', 'production') else 'sandbox'
+if xendit_secret_key:
+    cfg['xendit'] = {'secret_key': xendit_secret_key}
+cfg.pop('dana_gateway', None)
 with open(config_path, 'w') as handle:
     json.dump(cfg, handle, indent=2)
 PYEOF
