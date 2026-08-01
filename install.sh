@@ -59,13 +59,19 @@ mkdir -p /etc/openvpn/server
 mkdir -p /etc/openvpn/clients
 mkdir -p /etc/openvpn/easy-rsa
 
-# Copy local scripts & bot to /etc/vpn
-if [[ -d "${SCRIPT_DIR}/scripts" ]]; then
-    cp -r "${SCRIPT_DIR}/scripts/"* /etc/vpn/scripts/ 2>/dev/null
+# Copy local scripts & bot to /etc/vpn.  Do not continue with a partial
+# installation: the menu and vpn-cli commands depend on these files.
+if [[ ! -f "${SCRIPT_DIR}/scripts/menu/main.sh" || ! -f "${SCRIPT_DIR}/scripts/api/cli.py" ]]; then
+    echo -e "${RED}[ERROR] File menu atau vpn-cli tidak ditemukan di ${SCRIPT_DIR}/scripts.${NC}"
+    echo -e "${YELLOW}Jalankan installer dari folder repository yang lengkap.${NC}"
+    exit 1
 fi
+
+cp -a "${SCRIPT_DIR}/scripts/." /etc/vpn/scripts/
+
 if [[ -d "${SCRIPT_DIR}/bot" ]]; then
     mkdir -p /etc/vpn/bot
-    cp -r "${SCRIPT_DIR}/bot/"* /etc/vpn/bot/ 2>/dev/null
+    cp -a "${SCRIPT_DIR}/bot/." /etc/vpn/bot/
 fi
 
 # Save Config
@@ -434,4 +440,3 @@ echo -e "Ketik '${BWHITE}menu${NC}' untuk membuka Menu Utama."
 echo -e "Gunakan '${BWHITE}vpn-cli${NC}' untuk integrasi Telegram Bot / API."
 echo -e "Bot Telegram Service: '${BWHITE}systemctl status bot-vpn${NC}'"
 echo ""
-EOF
