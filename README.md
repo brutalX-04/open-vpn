@@ -34,6 +34,7 @@ Setelah instalasi, installer mengaktifkan dan langsung menjalankan service berik
 | BadVPN UDPGW | `badvpn-7100`, `badvpn-7200`, `badvpn-7300` | Hanya bind localhost pada port 7100/7200/7300 |
 | Xray | `xray` | Inbound WS lokal pada port 10001/10002/10003 |
 | Expiry cleanup | `vpn-expiry-cleanup.timer` | Menjalankan pemeriksaan akun expired setiap menit |
+| SSH session limit | `vpn-session-limit.timer` | Menutup sesi SSH tambahan setiap menit |
 
 Bot Telegram (`bot-vpn.service`) hanya diaktifkan otomatis bila token diisi saat instalasi. Jika token diisi kemudian, jalankan:
 
@@ -59,6 +60,14 @@ systemctl list-timers vpn-expiry-cleanup.timer
 /etc/vpn/scripts/system/cleanup.sh --verbose
 tail -f /var/log/vpn/cleanup.log
 ```
+
+## Batas koneksi dan trial
+
+- Satu akun OpenVPN hanya dapat memiliki satu koneksi aktif, termasuk bila mencoba memakai profil TCP dan UDP bersamaan. Koneksi kedua ditolak saat proses connect.
+- Satu akun SSH dibatasi satu sesi interaktif aktif. Timer `vpn-session-limit.timer` menutup sesi tambahan paling lambat dalam satu menit. Log ada di `/var/log/vpn/session-limit.log`.
+- Satu akun Telegram hanya dapat membuat satu paket trial per tanggal server. Catatan disimpan di `/etc/vpn/bot/trial_users.json`, sehingga aturan tetap berlaku setelah bot atau VPS direstart.
+
+Xray tidak menyediakan pembatas jumlah koneksi aktif per pengguna pada konfigurasi inbound standar ini. Karena itu, script tidak mengklaim membatasi multi-login Xray; pembatasan tersebut memerlukan proxy/session store eksternal atau sistem autentikasi tambahan.
 
 ## Port yang benar-benar dikonfigurasi
 
