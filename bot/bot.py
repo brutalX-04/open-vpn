@@ -1,0 +1,538 @@
+#!/usr/bin/env python3
+# ============================================================
+#  bot/bot.py — Telegram Bot VPN Store
+#  Automatic Payment: QR Code Payment (DANA Payment Gateway QRIS)
+#  Design: Clean, Professional, No Emojis
+# ============================================================
+
+import os
+import sys
+import io
+import json
+import logging
+import random
+import datetime
+from typing import Dict, Any
+
+import qrcode
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
+from telegram.ext import (
+    Updater, CommandHandler, CallbackQueryHandler, MessageHandler,
+    Filters, CallbackContext
+)
+
+# Logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+TRIAL_LOG_FILE = os.path.join(BASE_DIR, "trial_users.json")
+
+sys.path.append(os.path.dirname(BASE_DIR))
+from scripts.api import cli
+from bot.dana_gateway import DanaPaymentGateway
+
+def load_config() -> Dict[str, Any]:
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    return {
+        "bot_token": "",
+        "admin_ids": [],
+        "dana_gateway": {"merchant_id": "", "client_id": "", "client_secret": "", "environment": "sandbox"},
+        "prices": {
+            "ssh": {"7": 5000, "14": 9000, "30": 15000},
+            "vmess": {"7": 6000, "14": 10000, "30": 18000},
+            "vless": {"7": 6000, "14": 10000, "30": 18000},
+            "trojan": {"7": 6000, "14": 10000, "30": 18000},
+            "ovpn": {"7": 7000, "14": 12000, "30": 20000}
+        }
+    }
+
+def save_config(config: Dict[str, Any]):
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+
+def is_admin(user_id: int) -> bool:
+    config = load_config()
+    return user_id in config.get("admin_ids", [])
+
+def format_rupiah(val: int) -> str:
+    return f"Rp {val:,.0f}".replace(",", ".")
+
+def get_dana_gateway() -> DanaPaymentGateway:
+    config = load_config()
+    dg = config.get("dana_gateway", {})
+    return DanaPaymentGateway(
+        merchant_id=dg.get("merchant_id", ""),
+        client_id=dg.get("client_id", ""),
+        client_secret=dg.get("client_secret", ""),
+        env=dg.get("environment", "sandbox")
+    )
+
+def generate_qr_image_bytes(qr_data: str) -> io.BytesIO:
+    """Generates QR code PNG image in memory buffer"""
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf
+
+# ── Command Handlers ────────────────────────────────────────
+
+def start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    config = load_config()
+    status_res = cli.get_status()
+    s_data = status_res.get("data", {})
+
+    ip = s_data.get("ip", "N/A")
+    domain = s_data.get("domain", "N/A")
+    uptime = s_data.get("uptime", "N/A")
+    ram = s_data.get("ram", {})
+    ram_used = ram.get("used_mb", 0)
+    ram_total = ram.get("total_mb", 0)
+    user_counts = s_data.get("user_counts", {})
+
+    msg = f"""========================================
+SYSTEM STORE VPN PREMIUM
+========================================
+
+User ID : <code>{user.id}</code>
+Name    : <b>{user.first_name}</b>
+
+[ INFORMASI SERVER VPS ]
+----------------------------------------
+Host / IP : <code>{ip}</code>
+Domain    : <code>{domain}</code>
+Uptime    : <code>{uptime}</code>
+RAM       : <code>{ram_used} MB / {ram_total} MB</code>
+SSH User  : <code>{user_counts.get('ssh', 0)} User</code>
+Xray User : <code>{user_counts.get('xray', 0)} User</code>
+----------------------------------------
+
+Silakan pilih opsi layanan di bawah ini:"""
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Buy SSH", callback_data="buy_ssh"),
+            InlineKeyboardButton("Buy Vmess", callback_data="buy_vmess")
+        ],
+        [
+            InlineKeyboardButton("Buy Vless", callback_data="buy_vless"),
+            InlineKeyboardButton("Buy Trojan", callback_data="buy_trojan")
+        ],
+        [
+            InlineKeyboardButton("Buy OpenVPN (TCP/UDP)", callback_data="buy_ovpn")
+        ],
+        [
+            InlineKeyboardButton("Create Trial (3 Jam)", callback_data="create_trial")
+        ]
+    ]
+
+    if is_admin(user.id):
+        keyboard.append([InlineKeyboardButton("Admin Panel", callback_data="admin_panel")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    if update.message:
+        update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+    elif update.callback_query:
+        try:
+            update.callback_query.edit_message_text(msg, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        except:
+            update.callback_query.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+
+# ── Buy Flow & QR Code Payment ─────────────────────────────
+
+def buy_menu(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    proto = query.data.replace("buy_", "")
+
+    config = load_config()
+    prices = config.get("prices", {}).get(proto, {})
+
+    proto_names = {
+        "ssh": "SSH & OpenSSH",
+        "vmess": "Xray Vmess WS/gRPC",
+        "vless": "Xray Vless WS/gRPC",
+        "trojan": "Xray Trojan WS/gRPC",
+        "ovpn": "OpenVPN (TCP & UDP)"
+    }
+
+    p_name = proto_names.get(proto, proto.upper())
+
+    msg = f"""========================================
+PEMBELIAN AKUN {p_name.upper()}
+========================================
+
+Pilih durasi masa aktif yang diinginkan:
+
+- 7 Hari (1 Minggu)  : {format_rupiah(prices.get('7', 5000))}
+- 14 Hari (2 Minggu) : {format_rupiah(prices.get('14', 9000))}
+- 30 Hari (1 Bulan)  : {format_rupiah(prices.get('30', 15000))}
+----------------------------------------"""
+
+    keyboard = [
+        [
+            InlineKeyboardButton(f"7 Hari - {format_rupiah(prices.get('7', 5000))}", callback_data=f"select_{proto}_7"),
+        ],
+        [
+            InlineKeyboardButton(f"14 Hari - {format_rupiah(prices.get('14', 9000))}", callback_data=f"select_{proto}_14"),
+        ],
+        [
+            InlineKeyboardButton(f"30 Hari - {format_rupiah(prices.get('30', 15000))}", callback_data=f"select_{proto}_30"),
+        ],
+        [
+            InlineKeyboardButton("Kembali", callback_data="start_menu")
+        ]
+    ]
+
+    query.edit_message_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+
+def select_duration(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    parts = query.data.split("_")
+    proto = parts[1]
+    days = int(parts[2])
+
+    config = load_config()
+    amount = config.get("prices", {}).get(proto, {}).get(str(days), 10000)
+    inv_id = f"INV{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+    # Generate QR Code order from DANA Payment Gateway
+    dana = get_dana_gateway()
+    success, order_res = dana.create_order(inv_id=inv_id, amount=amount, title=f"Purchase {proto.upper()} {days}D")
+
+    if not success:
+        query.edit_message_text(f"Gagal memproses QR Code Payment Gateway: {order_res.get('error')}", parse_mode=ParseMode.HTML)
+        return
+
+    qr_str = order_res.get("qr_code", order_res.get("payment_url", inv_id))
+    order_id = order_res.get("order_id", inv_id)
+
+    # Generate QR Code image in memory
+    qr_img_bytes = generate_qr_image_bytes(qr_str)
+
+    tx_data = {
+        "inv_id": inv_id,
+        "order_id": order_id,
+        "user_id": query.from_user.id,
+        "proto": proto,
+        "days": days,
+        "amount": amount,
+        "created_at": str(datetime.datetime.now())
+    }
+
+    context.user_data["pending_tx"] = tx_data
+
+    caption_msg = f"""========================================
+PEMBAYARAN AUTOMATIC QR CODE
+========================================
+
+Invoice ID : <code>{inv_id}</code>
+Layanan    : {proto.upper()} ({days} Hari)
+Total      : <b>{format_rupiah(amount)}</b>
+Status     : PENDING PAYMENT
+
+PETUNJUK PEMBAYARAN QR CODE:
+1. Scan QR Code di atas menggunakan aplikasi DANA / QRIS.
+2. Selesaikan pembayaran sesuai nominal yang tertera.
+3. Klik tombol 'Cek Pembayaran' setelah berhasil.
+----------------------------------------"""
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Cek Pembayaran", callback_data=f"check_pay_{inv_id}")
+        ],
+        [
+            InlineKeyboardButton("Batal", callback_data="start_menu")
+        ]
+    ]
+
+    # Delete previous inline message and send Photo with QR Code
+    try:
+        query.message.delete()
+    except:
+        pass
+
+    context.bot.send_photo(
+        chat_id=update.effective_chat.id,
+        photo=qr_img_bytes,
+        caption=caption_msg,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+def check_payment(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
+    tx_data = context.user_data.get("pending_tx")
+    if not tx_data:
+        query.message.reply_text("Transaksi tidak ditemukan atau telah kadaluarsa.", parse_mode=ParseMode.HTML)
+        return
+
+    inv_id = tx_data["inv_id"]
+    order_id = tx_data.get("order_id", inv_id)
+    proto = tx_data["proto"]
+    days = tx_data["days"]
+
+    # Verify payment status against DANA Payment Gateway API
+    dana = get_dana_gateway()
+    is_paid, status_str = dana.check_order_status(inv_id=inv_id, order_id=order_id)
+
+    if not is_paid:
+        query.answer(f"Status Pembayaran QR Code: {status_str}. Silakan tuntaskan Scan QR Code terlebih dahulu.", show_alert=True)
+        return
+
+    username = f"usr{random.randint(1000,9999)}"
+    query.message.reply_text("Verifikasi pembayaran QR Code berhasil. Memproses pembuatan akun...", parse_mode=ParseMode.HTML)
+
+    if proto == 'ssh':
+        res = cli.create_user(proto='ssh', username=username, days=days, password=f"pass{random.randint(100,999)}")
+    elif proto in ['vmess', 'vless', 'trojan']:
+        res = cli.create_user(proto=proto, username=username, days=days)
+    elif proto == 'ovpn':
+        res_tcp = cli.create_user(proto='ovpn-tcp', username=username, days=days)
+        res_udp = cli.create_user(proto='ovpn-udp', username=username, days=days)
+        res = {"status": "success", "data": {"username": username, "tcp": res_tcp.get("data"), "udp": res_udp.get("data")}}
+    else:
+        res = cli.create_user(proto=proto, username=username, days=days)
+
+    if res.get("status") == "success":
+        data = res.get("data", {})
+        config = cli.get_config()
+        domain = config.get("DOMAIN", "N/A")
+
+        out_msg = f"""========================================
+AKUN VPN BERHASIL DIBUAT
+========================================
+Username   : <code>{data.get('username', username)}</code>
+Masa Aktif : <code>{days} Hari</code>
+Expired    : <code>{data.get('expired', 'N/A')}</code>
+Domain     : <code>{domain}</code>
+----------------------------------------\n"""
+
+        if proto == 'ssh':
+            out_msg += f"""DETAIL SSH & WEBSOCKET:
+Password      : <code>{data.get('password')}</code>
+Port SSH      : <code>22</code>
+Port Dropbear : <code>143, 109</code>
+Port SSH-WS   : <code>80</code>
+Port SSL-WS   : <code>443</code>
+SSH-UDP       : <code>1-65535</code>
+UDPGW         : <code>7100-7300</code>
+
+Payload WSS:
+<code>GET wss://{domain}/ [protocol][crlf]Host: bug[crlf]Upgrade: websocket[crlf][crlf]</code>"""
+
+        elif proto in ['vmess', 'vless', 'trojan']:
+            links = data.get("links", {})
+            out_msg += f"""CONFIG {proto.upper()}:
+UUID/Password : <code>{data.get('uuid')}</code>
+
+WS TLS (443):
+<code>{links.get('ws_tls')}</code>
+
+WS non-TLS (80):
+<code>{links.get('ws_none_tls')}</code>
+
+gRPC TLS (443):
+<code>{links.get('grpc')}</code>"""
+
+        elif proto == 'ovpn':
+            out_msg += f"""CONFIG OPENVPN:
+OpenVPN TCP Port: 1194
+OpenVPN UDP Port: 1194 (Fast Latency)
+File .ovpn telah dibuat di server."""
+
+        query.message.reply_text(out_msg, parse_mode=ParseMode.HTML)
+        context.user_data.pop("pending_tx", None)
+    else:
+        query.message.reply_text(f"Gagal membuat akun: {res.get('message')}", parse_mode=ParseMode.HTML)
+
+# ── Trial Handler ───────────────────────────────────────────
+
+def create_trial(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    user_id = query.from_user.id
+
+    trials = {}
+    if os.path.exists(TRIAL_LOG_FILE):
+        with open(TRIAL_LOG_FILE, 'r') as f:
+            trials = json.load(f)
+
+    last_time = trials.get(str(user_id))
+    now_ts = datetime.datetime.now().timestamp()
+
+    if last_time and (now_ts - last_time < 86400):
+        remaining_hrs = int((86400 - (now_ts - last_time)) // 3600)
+        try:
+            query.edit_message_text(
+                f"Anda telah membuat trial hari ini. Batas coba lagi dalam {remaining_hrs} jam.",
+                parse_mode=ParseMode.HTML
+            )
+        except:
+            query.message.reply_text(
+                f"Anda telah membuat trial hari ini. Batas coba lagi dalam {remaining_hrs} jam.",
+                parse_mode=ParseMode.HTML
+            )
+        return
+
+    try:
+        query.edit_message_text("Membuat paket Trial 3 Jam (SSH, Vmess, Vless, Trojan, OpenVPN)...", parse_mode=ParseMode.HTML)
+    except:
+        query.message.reply_text("Membuat paket Trial 3 Jam (SSH, Vmess, Vless, Trojan, OpenVPN)...", parse_mode=ParseMode.HTML)
+
+    t_user = f"tr{random.randint(1000,9999)}"
+    res = cli.create_trial_bundle(t_user, hours=3)
+
+    if res.get("status") == "success":
+        trials[str(user_id)] = now_ts
+        with open(TRIAL_LOG_FILE, 'w') as f:
+            json.dump(trials, f)
+
+        accs = res.get("accounts", {})
+        ssh_acc = accs.get("ssh", {})
+        vmess_acc = accs.get("vmess", {})
+        vless_acc = accs.get("vless", {})
+        trojan_acc = accs.get("trojan", {})
+
+        config = cli.get_config()
+        domain = config.get("DOMAIN", "N/A")
+
+        msg = f"""========================================
+PAKET TRIAL ALL-IN-ONE (3 JAM)
+========================================
+Username   : <code>{t_user}</code>
+Masa Aktif : <code>3 Jam</code>
+Domain     : <code>{domain}</code>
+----------------------------------------
+
+1. SSH & OPENSSH
+Password : <code>{ssh_acc.get('password')}</code>
+Port WS  : <code>80</code> | SSL: <code>443</code>
+
+2. VMESS WS TLS
+<code>{vmess_acc.get('links', {}).get('ws_tls')}</code>
+
+3. VLESS WS TLS
+<code>{vless_acc.get('links', {}).get('ws_tls')}</code>
+
+4. TROJAN WSS TLS
+<code>{trojan_acc.get('links', {}).get('ws_tls')}</code>
+
+5. OPENVPN UDP FAST
+Remote: <code>{domain}:1194 (UDP)</code>"""
+
+        query.message.reply_text(msg, parse_mode=ParseMode.HTML)
+    else:
+        query.message.reply_text("Gagal membuat paket trial.", parse_mode=ParseMode.HTML)
+
+# ── Admin Panel ─────────────────────────────────────────────
+
+def admin_panel(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    if not is_admin(query.from_user.id):
+        query.message.reply_text("Akses ditolak. Pengguna bukan admin.", parse_mode=ParseMode.HTML)
+        return
+
+    msg = """========================================
+PANEL ADMINISTRATOR
+========================================
+Pilih menu konfigurasi admin:"""
+
+    keyboard = [
+        [InlineKeyboardButton("Ubah Harga Produk", callback_data="admin_price_menu")],
+        [InlineKeyboardButton("Konfigurasi DANA Gateway", callback_data="admin_dana_cfg")],
+        [InlineKeyboardButton("Kembali ke Menu Utama", callback_data="start_menu")]
+    ]
+
+    try:
+        query.edit_message_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+    except:
+        query.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+
+def admin_price_menu(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    if not is_admin(query.from_user.id):
+        return
+
+    config = load_config()
+    prices = config.get("prices", {})
+
+    msg = f"""========================================
+KONFIGURASI HARGA PRODUK
+========================================
+SSH    : 7d={prices.get('ssh',{}).get('7')}, 14d={prices.get('ssh',{}).get('14')}, 30d={prices.get('ssh',{}).get('30')}
+Vmess  : 7d={prices.get('vmess',{}).get('7')}, 14d={prices.get('vmess',{}).get('14')}, 30d={prices.get('vmess',{}).get('30')}
+Vless  : 7d={prices.get('vless',{}).get('7')}, 14d={prices.get('vless',{}).get('14')}, 30d={prices.get('vless',{}).get('30')}
+Trojan : 7d={prices.get('trojan',{}).get('7')}, 14d={prices.get('trojan',{}).get('14')}, 30d={prices.get('trojan',{}).get('30')}
+OVPN   : 7d={prices.get('ovpn',{}).get('7')}, 14d={prices.get('ovpn',{}).get('14')}, 30d={prices.get('ovpn',{}).get('30')}
+----------------------------------------
+Untuk mengubah harga produk, edit file /etc/vpn/bot/config.json"""
+
+    keyboard = [[InlineKeyboardButton("Kembali", callback_data="admin_panel")]]
+    try:
+        query.edit_message_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+    except:
+        query.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+
+# ── Router & Callback Dispatcher ────────────────────────────
+
+def callback_router(update: Update, context: CallbackContext):
+    data = update.callback_query.data
+    if data == "start_menu":
+        start(update, context)
+    elif data.startswith("buy_"):
+        buy_menu(update, context)
+    elif data.startswith("select_"):
+        select_duration(update, context)
+    elif data.startswith("check_pay_"):
+        check_payment(update, context)
+    elif data == "create_trial":
+        create_trial(update, context)
+    elif data == "admin_panel":
+        admin_panel(update, context)
+    elif data == "admin_price_menu":
+        admin_price_menu(update, context)
+
+def main():
+    config = load_config()
+    token = config.get("bot_token")
+    if not token or token == "BOT_TOKEN_HERE":
+        print("Warning: bot_token belum diisi di bot/config.json!")
+
+    updater = Updater(token, use_context=True)
+    dp = updater.dispatcher
+
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("menu", start))
+    dp.add_handler(CallbackQueryHandler(callback_router))
+
+    logger.info("Bot VPN shop starting (QR Code Payment Gateway Enabled)...")
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == "__main__":
+    main()
