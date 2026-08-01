@@ -86,26 +86,21 @@ Nginx, Dropbear, dan Stunnel dipasang tetapi installer ini belum menulis konfigu
 
 ## Bot Telegram
 
-Saat instalasi, masukkan token bot dan Admin User ID bila sudah tersedia. Installer juga akan menawarkan konfigurasi DANA Payment Gateway. Ini adalah kredensial merchant resmi, **bukan** nomor akun DANA pribadi:
+Saat instalasi, masukkan token bot dan Admin User ID bila sudah tersedia. Installer juga menawarkan konfigurasi Xendit untuk pembayaran QRIS otomatis. Ambil **Secret API Key** dari dashboard Xendit; gunakan Test Secret Key untuk pengujian dan Live Secret Key untuk transaksi produksi.
 
-- `merchant_id`, `client_id`, dan `client_secret` diperoleh dari portal/integrasi DANA Business setelah akun merchant dan akses API disetujui.
-- Gunakan `sandbox` untuk pengujian dan `production` hanya dengan kredensial produksi yang aktif.
-- Ketiga kredensial wajib diisi agar bot dapat membuat QR dan memverifikasi pembayaran. Tanpa ketiganya, bot menolak pembayaran DANA dan tidak akan membuat akun otomatis.
+Bot memakai Xendit Payments API v3, endpoint `/v3/payment_requests`, API version `2024-11-11`, dan channel `QRIS`. Saat pelanggan memilih paket, bot membuat QRIS dinamis; akun hanya dibuat setelah status Payment Request dari Xendit adalah `SUCCEEDED`.
 
 Konfigurasi disimpan di `/etc/vpn/bot/config.json`:
 
 ```json
 {
-  "dana_gateway": {
-    "merchant_id": "MERCHANT_ID_DARI_DANA",
-    "client_id": "CLIENT_ID_DARI_DANA",
-    "client_secret": "CLIENT_SECRET_DARI_DANA",
-    "environment": "sandbox"
+  "xendit": {
+    "secret_key": "xnd_development_atau_live_secret_key"
   }
 }
 ```
 
-Jaga `client_secret` tetap rahasia; jangan kirimkan ke chat atau commit ke repository. Setelah mengubah token, admin ID, atau konfigurasi DANA:
+Jaga Secret API Key tetap rahasia; jangan kirimkan ke chat atau commit ke repository. Tanpa key, bot menolak pembayaran dan tidak membuat akun otomatis. Setelah mengubah token, admin ID, atau konfigurasi Xendit:
 
 ```bash
 systemctl enable --now bot-vpn
