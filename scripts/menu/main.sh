@@ -12,43 +12,40 @@ USED_RAM=$(awk '/MemAvailable/ {total='"${TOTAL_RAM}"'; avail=int($2/1024); prin
 CPU=$(top -bn1 | grep "Cpu(s)" | awk '{printf "%.0f", $2+$4}')
 
 SSH_COUNT=$(awk -F: '$3 >= 1000 && $1 != "nobody" {c++} END {print c+0}' /etc/passwd)
-VMESS_COUNT=$(grep -c '"email"' /etc/xray/config.json 2>/dev/null || echo 0)
+VMESS_COUNT=$(grep -c '"email"' /etc/xray/config.json 2>/dev/null || true)
+VMESS_COUNT=${VMESS_COUNT:-0}
 OVPN_TCP=$(grep "^CLIENT_LIST" /etc/openvpn/server/openvpn-tcp.log 2>/dev/null | wc -l)
 OVPN_UDP=$(grep "^CLIENT_LIST" /etc/openvpn/server/openvpn-udp.log 2>/dev/null | wc -l)
 TODAY_DATE=$(date +"%A, %d %B %Y | %H:%M WIB")
 
 clear
+header "SYSTEM AUTOSCRIPT VPN PREMIUM"
 
-echo -e "${BCYAN}"
-echo "================================================="
-echo "        SYSTEM AUTOSCRIPT VPN PREMIUM            "
-echo "================================================="
-echo -e "${NC}"
+section "INFORMASI SERVER"
+printf "  ${BWHITE}%-12s${NC} ${CYAN}%-17s${NC} ${BWHITE}%-9s${NC} ${CYAN}%s${NC}\n" \
+    "IP / Host" "${MYIP:-N/A}" "Domain" "${DOMAIN:-N/A}"
+printf "  ${BWHITE}%-12s${NC} %-17s ${BWHITE}%-9s${NC} ${CYAN}%s${NC}\n" \
+    "Uptime" "${UPTIME}" "RAM" "${USED_RAM}/${TOTAL_RAM} MB"
+printf "  ${BWHITE}%-12s${NC} ${CYAN}%-17s${NC} ${BWHITE}%-9s${NC} ${CYAN}%s${NC}\n" \
+    "CPU" "${CPU}%" "Tanggal" "${TODAY_DATE}"
 
-divider
-echo -e "  ${BYELLOW}[ SERVER INFORMATION ]${NC}"
-echo -e "  ${BWHITE}IP / Host ${NC}: ${CYAN}${MYIP:-N/A}${NC}   ${BWHITE}Domain${NC}: ${CYAN}${DOMAIN:-N/A}${NC}"
-echo -e "  ${BWHITE}Uptime    ${NC}: ${UPTIME}   ${BWHITE}RAM${NC}: ${USED_RAM}/${TOTAL_RAM} MB   ${BWHITE}CPU${NC}: ${CPU}%"
-echo -e "  ${BWHITE}Tanggal   ${NC}: ${TODAY_DATE}"
-divider
-echo -e "  ${BYELLOW}[ ACTIVE CONNECTIONS ]${NC}"
-echo -e "  ${BWHITE}SSH User   ${NC}: ${BCYAN}${SSH_COUNT}${NC}   ${BWHITE}Xray${NC}: ${BCYAN}${VMESS_COUNT}${NC}"
-echo -e "  ${BWHITE}OVPN TCP   ${NC}: ${BCYAN}${OVPN_TCP}${NC}   ${BWHITE}OVPN UDP${NC}: ${BPURPLE}${OVPN_UDP}${NC}"
-divider
+section "KONEKSI AKTIF"
+printf "  ${BWHITE}%-12s${NC} ${CYAN}%-17s${NC} ${BWHITE}%-9s${NC} ${CYAN}%s${NC}\n" \
+    "SSH User" "${SSH_COUNT}" "Xray" "${VMESS_COUNT}"
+printf "  ${BWHITE}%-12s${NC} ${CYAN}%-17s${NC} ${BWHITE}%-9s${NC} ${CYAN}%s${NC}\n" \
+    "OVPN TCP" "${OVPN_TCP}" "OVPN UDP" "${OVPN_UDP}"
 
-echo ""
-echo -e "  ${BYELLOW}--- MENU LAYANAN -----------------------------${NC}"
-echo ""
-echo -e "  ${BCYAN}[1]${NC}  ${BWHITE}SSH${NC}          Create, Delete, Renew, List, Cek"
-echo -e "  ${BCYAN}[2]${NC}  ${BWHITE}Vmess${NC}        WS TLS, non-TLS, gRPC"
-echo -e "  ${BCYAN}[3]${NC}  ${BWHITE}Vless${NC}        WS TLS, non-TLS, gRPC"
+section "MENU LAYANAN"
+echo -e "  ${BCYAN}[1]${NC}  ${BWHITE}SSH${NC}          Kelola akun SSH"
+echo -e "  ${BCYAN}[2]${NC}  ${BWHITE}VMess${NC}        WS TLS, non-TLS, gRPC"
+echo -e "  ${BCYAN}[3]${NC}  ${BWHITE}VLess${NC}        WS TLS, non-TLS, gRPC"
 echo -e "  ${BCYAN}[4]${NC}  ${BWHITE}Trojan${NC}       WS, gRPC"
-echo -e "  ${BCYAN}[5]${NC}  ${BPURPLE}OpenVPN${NC}      TCP, UDP"
-echo -e "  ${BCYAN}[6]${NC}  ${BWHITE}Status${NC}       Semua Service"
-echo -e "  ${BCYAN}[7]${NC}  ${BWHITE}Restart${NC}      Restart Service"
-echo -e "  ${BCYAN}[8]${NC}  ${BWHITE}Setting${NC}      AutoKill, Clear Cache"
+echo -e "  ${BCYAN}[5]${NC}  ${BWHITE}OpenVPN${NC}      TCP dan UDP"
+echo -e "  ${BCYAN}[6]${NC}  ${BWHITE}Status${NC}       Periksa seluruh service"
+echo -e "  ${BCYAN}[7]${NC}  ${BWHITE}Restart${NC}      Restart service"
+echo -e "  ${BCYAN}[8]${NC}  ${BWHITE}AutoKill${NC}     Atur batas sesi SSH"
 echo -e "  ${BCYAN}[9]${NC}  ${BRED}Reboot${NC}       Restart VPS"
-echo -e "  ${BCYAN}[x]${NC}  ${BWHITE}Exit${NC}"
+echo -e "  ${BCYAN}[x]${NC}  ${BWHITE}Keluar${NC}"
 echo ""
 divider
 echo ""
@@ -64,7 +61,7 @@ case "${OPT}" in
     5) clear; menu-ovpn ;;
     6) clear; /etc/vpn/scripts/system/status.sh ;;
     7) clear; /etc/vpn/scripts/system/restart.sh ;;
-    8) clear; menu-setting ;;
+    8) clear; /etc/vpn/scripts/system/autokill.sh ;;
     9) clear; confirm "Yakin ingin reboot?" && reboot ;;
     x|X) exit 0 ;;
     *) warn "Pilihan tidak valid."; sleep 1; menu ;;
