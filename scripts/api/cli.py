@@ -164,9 +164,9 @@ def create_user(proto, username, days=None, hours=None, password=None):
             }
         elif proto == 'trojan':
             links = {
-                "ws_tls": f"trojan://{u_id}@{domain}:443?path=%2Ftrojan-ws&security=tls&host={domain}&type=ws&sni=${domain}#{username}",
+                "ws_tls": f"trojan://{u_id}@{domain}:443?path=%2Ftrojan-ws&security=tls&host={domain}&type=ws&sni={domain}#{username}",
                 "ws_none_tls": f"trojan://{u_id}@{domain}:80?path=%2Ftrojan-ws&security=none&host={domain}&type=ws#{username}",
-                "grpc": f"trojan://{u_id}@{domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan-grpc&sni=${domain}#{username}"
+                "grpc": f"trojan://{u_id}@{domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan-grpc&sni={domain}#{username}"
             }
 
         return {
