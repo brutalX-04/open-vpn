@@ -14,6 +14,9 @@ do_restart() {
     for svc in "$@"; do
         if [[ "${svc}" == init:* ]]; then
             /etc/init.d/"${svc#init:}" restart &>/dev/null
+        elif [[ "${svc}" == "optional:"* ]]; then
+            systemctl list-unit-files "${svc#optional:}" --no-legend 2>/dev/null | grep -q . || continue
+            systemctl restart "${svc#optional:}" &>/dev/null
         else
             systemctl restart "${svc}" &>/dev/null
         fi
@@ -52,17 +55,10 @@ while true; do
             do_restart "OpenVPN TCP" vpn-openvpn-tcp
             do_restart "OpenVPN UDP" vpn-openvpn-udp
             do_restart "Nginx"       init:nginx
-            do_restart "Xray"        xray xray.service
-            do_restart "Websocket"   ws-stunnel.service ws-dropbear.service
+            do_restart "Xray"        xray
+            do_restart "Websocket"   optional:ws-stunnel.service optional:ws-dropbear.service
             do_restart "Fail2Ban"    fail2ban
-            # Restart BadVPN
-            info "Restarting BadVPN UDPGW..."
-            pkill badvpn-udpgw &>/dev/null
-            sleep 0.5
-            for PORT in 7100 7200 7300; do
-                screen -dmS "badvpn-${PORT}" badvpn-udpgw --listen-addr "127.0.0.1:${PORT}" --max-clients 500
-            done
-            success "BadVPN UDPGW restarted (ports 7100-7300)."
+            do_restart "BadVPN UDPGW" badvpn-7100 badvpn-7200 badvpn-7300
             ;;
         2)  do_restart "OpenSSH"     init:ssh ;;
         3)  do_restart "Dropbear"    init:dropbear ;;
@@ -70,17 +66,9 @@ while true; do
         5)  do_restart "OpenVPN TCP" vpn-openvpn-tcp ;;
         6)  do_restart "OpenVPN UDP" vpn-openvpn-udp ;;
         7)  do_restart "Nginx"       init:nginx ;;
-        8)  do_restart "Xray"        xray xray.service ;;
-        9)  do_restart "Websocket"   ws-stunnel.service ws-dropbear.service ;;
-        10)
-            info "Restarting BadVPN UDPGW..."
-            pkill badvpn-udpgw &>/dev/null
-            sleep 0.5
-            for PORT in 7100 7200 7300; do
-                screen -dmS "badvpn-${PORT}" badvpn-udpgw --listen-addr "127.0.0.1:${PORT}" --max-clients 500
-            done
-            success "BadVPN UDPGW restarted."
-            ;;
+        8)  do_restart "Xray"        xray ;;
+        9)  do_restart "Websocket"   optional:ws-stunnel.service optional:ws-dropbear.service ;;
+        10) do_restart "BadVPN UDPGW" badvpn-7100 badvpn-7200 badvpn-7300 ;;
         11) do_restart "Fail2Ban"    fail2ban ;;
         0)  menu; exit 0 ;;
         *)  warn "Pilihan tidak valid!" ;;

@@ -1,62 +1,24 @@
 #!/bin/bash
-# ============================================================
-#  ssh/check.sh — Cek Koneksi Aktif SSH
-# ============================================================
+# Show tunnel-capable OpenSSH/Dropbear user processes (not utmp sessions).
 source /etc/vpn/lib/colors.sh
 require_root
-
-# Deteksi log file
-LOG_FILE=""
-[[ -f "/var/log/auth.log" ]]  && LOG_FILE="/var/log/auth.log"
-[[ -f "/var/log/secure" ]]    && LOG_FILE="/var/log/secure"
-
 clear
 header "  CEK KONEKSI AKTIF SSH  "
-
-# ── OpenSSH Aktif ──────────────────────────────────────────
-section "OpenSSH Login Aktif"
-printf "\n  ${BWHITE}%-8s %-16s %-20s %-12s${NC}\n" "PID" "USERNAME" "IP ADDRESS" "TERMINAL"
+section "Sesi SSH Aktif"
+printf "\n  ${BWHITE}%-8s %-18s %-24s${NC}\n" "PID" "USERNAME" "PROCESS"
 divider
-
-FOUND_SSH=0
-while IFS= read -r line; do
-    PID=$(echo "${line}" | awk '{print $2}')
-    USER=$(echo "${line}" | awk '{print $1}')
-    TTY=$(echo "${line}" | awk '{print $6}')
-    IP=$(echo "${line}" | awk '{print $5}' | tr -d '()')
-    printf "  %-8s %-16s %-20s %-12s\n" "${PID:-?}" "${USER}" "${IP:-local}" "${TTY}"
-    (( FOUND_SSH++ ))
-done < <(who -u 2>/dev/null | grep -v "^$")
-
-[[ "${FOUND_SSH}" -eq 0 ]] && echo -e "  ${YELLOW}Tidak ada sesi OpenSSH aktif.${NC}"
-
-# ── Dropbear Aktif ─────────────────────────────────────────
-section "Dropbear Login Aktif"
-printf "\n  ${BWHITE}%-8s %-16s %-20s${NC}\n" "PID" "USERNAME" "IP ADDRESS"
-divider
-
-FOUND_DB=0
-if [[ -n "${LOG_FILE}" ]]; then
-    # Ambil PID dropbear yang sedang berjalan
-    mapfile -t DB_PIDS < <(pgrep -x dropbear 2>/dev/null)
-    for PID in "${DB_PIDS[@]}"; do
-        DB_LINE=$(grep "dropbear\[${PID}\]" "${LOG_FILE}" 2>/dev/null | \
-                  grep -i "Password auth succeeded" | tail -1)
-        [[ -z "${DB_LINE}" ]] && continue
-        DB_USER=$(echo "${DB_LINE}" | awk '{print $10}')
-        DB_IP=$(echo "${DB_LINE}" | awk '{print $12}')
-        printf "  %-8s %-16s %-20s\n" "${PID}" "${DB_USER}" "${DB_IP}"
-        (( FOUND_DB++ ))
-    done
-fi
-
-[[ "${FOUND_DB}" -eq 0 ]] && echo -e "  ${YELLOW}Tidak ada sesi Dropbear aktif.${NC}"
-
-# ── Ringkasan ──────────────────────────────────────────────
+COUNT=0
+while read -r PID ACCOUNT COMMAND; do
+    [[ -z "${PID}" ]] && continue
+    SESSION_USER=$(echo "${COMMAND}" | sed -nE 's/.*(sshd|dropbear):? ([a-z][a-z0-9_]{2,19})(@.*)?/\2/p')
+    [[ -z "${SESSION_USER}" ]] && SESSION_USER="${ACCOUNT}"
+    printf "  %-8s %-18s %-24s\n" "${PID}" "${SESSION_USER}" "${COMMAND:0:24}"
+    COUNT=$((COUNT + 1))
+done < <(ps -eo pid=,user=,args= | awk '$0 ~ /sshd:|dropbear:/ && $2 != "root" {print $1, $2, substr($0, index($0,$3))}')
+[[ "${COUNT}" -eq 0 ]] && echo -e "  ${YELLOW}Tidak ada sesi SSH aktif.${NC}"
 divider
 echo ""
-echo -e "  ${BWHITE}Total Sesi SSH      ${NC}: ${BCYAN}${FOUND_SSH}${NC}"
-echo -e "  ${BWHITE}Total Sesi Dropbear ${NC}: ${BCYAN}${FOUND_DB}${NC}"
+echo -e "  ${BWHITE}Total Sesi SSH      ${NC}: ${BCYAN}${COUNT}${NC}"
 echo ""
 press_any_key
 menu-ssh

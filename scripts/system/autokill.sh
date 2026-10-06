@@ -5,15 +5,15 @@
 source /etc/vpn/lib/colors.sh
 require_root
 
-CRON_FILE="/etc/cron.d/vpn-autokill"
+LIMITS_FILE="/etc/vpn/limits.conf"
 
 show_status() {
-    if [[ -f "${CRON_FILE}" ]]; then
-        INTERVAL=$(grep -v "^#" "${CRON_FILE}" | awk '{print $1}' | grep -oP '\d+')
-        MAX=$(grep -v "^#" "${CRON_FILE}" | awk '{print $NF}')
+    if [[ -f "${LIMITS_FILE}" ]]; then
+        INTERVAL=$(awk -F= '$1=="INTERVAL"{print $2}' "${LIMITS_FILE}")
+        MAX=$(awk -F= '$1=="MAX_SESSIONS"{print $2}' "${LIMITS_FILE}")
         echo -e "  ${BWHITE}Status   ${NC}: ${BGREEN}● AKTIF${NC}"
-        echo -e "  ${BWHITE}Interval ${NC}: ${BYELLOW}Setiap ${INTERVAL} menit${NC}"
-        echo -e "  ${BWHITE}Max Login${NC}: ${BYELLOW}${MAX} sesi${NC}"
+        echo -e "  ${BWHITE}Interval ${NC}: ${BYELLOW}Setiap ${INTERVAL:-7} detik${NC}"
+        echo -e "  ${BWHITE}Max Login${NC}: ${BYELLOW}${MAX:-1} sesi${NC}"
     else
         echo -e "  ${BWHITE}Status   ${NC}: ${BRED}● TIDAK AKTIF${NC}"
     fi
@@ -44,12 +44,12 @@ if [[ "${OPT}" =~ ^[123]$ ]]; then
 fi
 
 case "${OPT}" in
-    1) INTERVAL="*/5"  ;;
-    2) INTERVAL="*/10" ;;
-    3) INTERVAL="*/15" ;;
+    1) INTERVAL=5 ;;
+    2) INTERVAL=10 ;;
+    3) INTERVAL=15 ;;
     4)
-        rm -f "${CRON_FILE}"
-        systemctl reload cron &>/dev/null
+        rm -f "${LIMITS_FILE}"
+        systemctl kill -s HUP vpn-session-guard &>/dev/null || true
         clear
         header "  AUTO-KILL DIMATIKAN  "
         success "AutoKill telah dinonaktifkan."
@@ -61,18 +61,13 @@ case "${OPT}" in
     *) error "Pilihan tidak valid!"; exit 1 ;;
 esac
 
-# ── Tulis cron ─────────────────────────────────────────────
-cat > "${CRON_FILE}" <<EOF
-# VPN AutoKill Multi-Login
-# Generated: ${NOW}
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-${INTERVAL} * * * * root /usr/bin/vpn-tendang ${MAX}
+cat > "${LIMITS_FILE}" <<EOF
+MAX_SESSIONS=${MAX}
+INTERVAL=${INTERVAL}
 EOF
+chmod 600 "${LIMITS_FILE}"
+systemctl kill -s HUP vpn-session-guard &>/dev/null || true
 
-systemctl reload cron &>/dev/null
-
-# ── Tampilkan Hasil ────────────────────────────────────────
 clear
 header "  AUTO-KILL DIKONFIGURASI  "
 echo ""

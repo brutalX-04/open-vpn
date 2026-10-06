@@ -63,8 +63,8 @@ svc_status  "OpenVPN UDP"     "vpn-openvpn-udp"
 echo ""
 echo -e "  ${BCYAN}[ XRAY / PROXY ]${NC}"
 svc_status  "Xray"            "xray"
-svc_status  "WS Stunnel"      "ws-stunnel"
-svc_status  "WS Dropbear"     "ws-dropbear"
+if systemctl list-unit-files ws-stunnel.service --no-legend 2>/dev/null | grep -q .; then svc_status "WS Stunnel" "ws-stunnel"; fi
+if systemctl list-unit-files ws-dropbear.service --no-legend 2>/dev/null | grep -q .; then svc_status "WS Dropbear" "ws-dropbear"; fi
 echo ""
 echo -e "  ${BCYAN}[ UDP GATEWAY ]${NC}"
 BADVPN_COUNT=$(pgrep -c badvpn-udpgw 2>/dev/null || echo 0)
@@ -78,15 +78,20 @@ divider
 # ── Jumlah User ────────────────────────────────────────────
 echo ""
 echo -e "  ${BCYAN}[ USER AKTIFF ]${NC}"
-SSH_COUNT=$(awk -F: '$3 >= 1000 && $1 != "nobody" {print $1}' /etc/passwd | wc -l)
+registry_count() { /usr/bin/vpn-cli list --service "$1" 2>/dev/null | jq '.data | length' 2>/dev/null || echo 0; }
+SSH_COUNT=$(registry_count ssh)
 OVPN_TCP_CONN=$(grep "^CLIENT_LIST" /etc/openvpn/server/openvpn-tcp.log 2>/dev/null | wc -l)
 OVPN_UDP_CONN=$(grep "^CLIENT_LIST" /etc/openvpn/server/openvpn-udp.log 2>/dev/null | wc -l)
-XRAY_COUNT=$(grep -c '"email"' /etc/xray/config.json 2>/dev/null || echo 0)
+VMESS_COUNT=$(registry_count vmess)
+VLESS_COUNT=$(registry_count vless)
+TROJAN_COUNT=$(registry_count trojan)
 
 echo -e "  ${BWHITE}SSH Users      ${NC}: ${BCYAN}${SSH_COUNT}${NC}"
 echo -e "  ${BWHITE}OpenVPN TCP    ${NC}: ${BCYAN}${OVPN_TCP_CONN} connected${NC}"
 echo -e "  ${BWHITE}OpenVPN UDP    ${NC}: ${BPURPLE}${OVPN_UDP_CONN} connected${NC}"
-echo -e "  ${BWHITE}Xray Accounts  ${NC}: ${BCYAN}${XRAY_COUNT}${NC}"
+echo -e "  ${BWHITE}VMess Accounts ${NC}: ${BCYAN}${VMESS_COUNT}${NC}"
+echo -e "  ${BWHITE}VLESS Accounts ${NC}: ${BCYAN}${VLESS_COUNT}${NC}"
+echo -e "  ${BWHITE}Trojan Accounts${NC}: ${BCYAN}${TROJAN_COUNT}${NC}"
 divider
 echo ""
 press_any_key

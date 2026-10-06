@@ -21,11 +21,6 @@ if [[ -z "${USERNAME}" || -z "${PASSWORD}" || -z "${DAYS}" ]]; then
     exit 1
 fi
 
-if id "${USERNAME}" &>/dev/null; then
-    error "Username '${USERNAME}' sudah ada!"
-    exit 1
-fi
-
 if ! [[ "${DAYS}" =~ ^[0-9]+$ ]] || [[ "${DAYS}" -lt 1 ]]; then
     error "Masa aktif harus berupa angka positif!"
     exit 1
@@ -42,20 +37,17 @@ PORT_STN=$(get_config "PORT_STUNNEL")
 PORT_UDP=$(get_config "PORT_UDP")
 
 # ── Buat User ──────────────────────────────────────────────
-EXPIRE_DATE=$(date -d "+${DAYS} days" +"%Y-%m-%d")
-useradd -e "${EXPIRE_DATE}" -s /bin/false -M "${USERNAME}" 2>/dev/null
-echo -e "${PASSWORD}\n${PASSWORD}" | passwd "${USERNAME}" &>/dev/null
-
-if ! id "${USERNAME}" &>/dev/null; then
-    error "Gagal membuat user! Periksa permission."
+CREATE_JSON=$(printf '%s\n' "${PASSWORD}" | /usr/bin/vpn-cli create --service ssh --user "${USERNAME}" --days "${DAYS}" --password-stdin 2>/dev/null)
+if [[ $? -ne 0 ]]; then
+    error "Gagal membuat user! Pastikan username belum dipakai dan masa aktif valid."
     exit 1
 fi
-
-EXP_DISPLAY=$(date -d "${EXPIRE_DATE}" +"%d %B %Y")
+EXP_EPOCH=$(echo "${CREATE_JSON}" | jq -r '.data.expires_at')
+EXP_DISPLAY=$(date -d "@${EXP_EPOCH}" +"%d %B %Y")
 
 # ── Tulis Log ──────────────────────────────────────────────
 mkdir -p /var/log/vpn
-LOG_LINE="[${NOW}] CREATE | user=${USERNAME} | exp=${EXPIRE_DATE}"
+LOG_LINE="[${NOW}] CREATE | user=${USERNAME} | expiry_epoch=${EXP_EPOCH}"
 echo "${LOG_LINE}" >> /var/log/vpn/ssh-users.log
 
 # ── Tampilkan Hasil ────────────────────────────────────────

@@ -1,127 +1,122 @@
-# Panduan Instalasi OpenVPN & Multi-Tunnel Autoscript
+# OpenVPN Control Server
+
+Server VPN dengan registry akun SQLite, cleanup berbasis masa aktif, pembatas sesi, menu lokal, dan REST API FastAPI. API hanya bind ke `127.0.0.1:8088`; akses dari luar harus melalui reverse proxy HTTPS yang dikelola admin.
 
 ## Persyaratan
 
-- Debian 10/11/12 atau Ubuntu 20.04/22.04.
-- VPS baru, akses root, minimal 1 GB RAM.
-- Koneksi internet saat instalasi. Domain bersifat opsional; jika kosong, IP VPS digunakan.
-
-## Instalasi
+- Debian 12, Ubuntu 22.04, atau Ubuntu 24.04, akses root, minimal RAM 1 GB.
+- Domain disarankan untuk membuat profil klien. Installer meminta domain dan memasang OpenVPN, Xray, Nginx, Python virtualenv, serta unit systemd. Jika domain terdeteksi, installer menawarkan endpoint `api.<domain>` melalui Nginx dan Let's Encrypt; DNS harus menunjuk ke VPS dan port 80/443 dapat dijangkau. Jika setup HTTPS gagal atau ditolak, API tetap loopback-only.
+- Jalankan installer dari root repository yang lengkap:
 
 ```bash
-apt update -y && apt install -y git curl wget
-cd /opt
-git clone https://github.com/brutalX-04/open-vpn.git
-cd open-vpn
+apt update && apt install -y git curl
+git clone https://github.com/brutalX-04/open-vpn.git /opt/open-vpn
+cd /opt/open-vpn
 chmod +x install.sh
 ./install.sh
 ```
 
-Jalankan installer dari folder repository hasil clone. Installer membutuhkan folder
-`scripts/`, `bot/`, dan `bin/` selain file `install.sh`.
+Installer mempertahankan PKI dan config Xray yang telah ada, menjalankan migrasi registry idempoten, dan menampilkan API key hanya saat pertama kali dibuat. Key disimpan di `/etc/vpn/api.env` dengan mode `0600`.
 
-Installer akan meminta domain/subdomain dan, secara opsional, token serta admin ID Telegram.
+## Perintah
 
-## Service yang otomatis berjalan
+Menu interaktif: `menu`, `menu-ssh`, `menu-xray`, `menu-ovpn`, `status`, dan `restart-service`.
 
-Setelah instalasi, installer mengaktifkan dan langsung menjalankan service berikut. Semua service ini juga aktif kembali setelah reboot:
+```bash
+vpn-cli migrate
+vpn-cli list --service ssh
+vpn-cli create --service ssh --user contoh_01 --days 7
+vpn-cli renew --service ssh --user contoh_01 --days 3
+vpn-cli delete --service ssh --user contoh_01
+vpn-cli cleanup
+vpn-cli doctor
+vpn-cli api-key rotate
+```
 
-| Service | Nama systemd | Keterangan |
+Username mengikuti `^[a-z][a-z0-9_]{2,19}$`. Durasi adalah 1–30 hari atau 1–720 jam, tepat dihitung sebagai N × 24 jam dari waktu UTC pembuatan. Password SSH dibaca dari stdin (`--password-stdin`) atau dibuat acak bila tidak diberikan; jangan meletakkan password di argumen proses.
+
+## REST API
+
+API lokal mendengarkan `127.0.0.1:8088`. Semua endpoint selain health membutuhkan header `X-API-Key`. Respons sukses berbentuk `{"data": ...}` dan error `{"error":{"code":"...","message":"..."}}`; semua respons membawa `X-Request-Id`. Rahasia tidak dicatat ke log.
+
+Unit API berjalan sebagai root agar dapat mengelola akun sistem dan konfigurasi VPN. Unit membatasi home dan temporary files, tetapi tidak memakai `ProtectSystem` karena shadow-utils memerlukan file sementara di `/etc`. Pertahankan bind loopback dan API key; sebelum mengeksposnya lewat reverse proxy, tinjau pembatasan privilege serta aktifkan TLS dan aturan akses yang sesuai.
+
+| Method | Endpoint | Fungsi |
 |---|---|---|
-| OpenSSH | `ssh` | Akses SSH standar di port 22 |
-| Cron | `cron` | Tetap dipakai oleh komponen sistem |
-| Nginx | `nginx` | Dipasang dan diaktifkan; konfigurasi proxy belum dibuat oleh installer |
-| Dropbear | `dropbear` | Dipasang dan diaktifkan |
-| Stunnel | `stunnel4` | Dipasang dan diaktifkan |
-| Fail2Ban | `fail2ban` | Dipasang dan diaktifkan |
-| OpenVPN TCP | `vpn-openvpn-tcp` | Port 1194/TCP |
-| OpenVPN UDP | `vpn-openvpn-udp` | Port 1194/UDP |
-| BadVPN UDPGW | `badvpn-7100`, `badvpn-7200`, `badvpn-7300` | Hanya bind localhost pada port 7100/7200/7300 |
-| Xray | `xray` | Inbound WS lokal pada port 10001/10002/10003 |
-| Expiry cleanup | `vpn-expiry-cleanup.timer` | Menjalankan pemeriksaan akun expired setiap menit |
-| SSH session limit | `vpn-session-limit.timer` | Menutup sesi SSH tambahan setiap menit |
+| GET | `/v1/health` | Health check tanpa autentikasi |
+| GET | `/v1/status` | Status unit, akun registry, dan sesi online yang tersedia |
+| GET | `/v1/services` | Kemampuan layanan aktual untuk aplikasi web |
+| POST | `/v1/accounts` | Buat akun (`service`, `days` atau `hours`, `username?`, `password?`, `max_sessions?`) |
+| GET | `/v1/accounts?service=ssh&limit=100&offset=0` | Daftar tanpa rahasia |
+| GET | `/v1/accounts/{service}/{username}` | Detail akun tanpa rahasia |
+| POST | `/v1/accounts/{service}/{username}/renew` | Perpanjang SSH/Xray dengan `{"days": n}` |
+| DELETE | `/v1/accounts/{service}/{username}` | Hapus akun dan putuskan sesi milik akun |
 
-Bot Telegram (`bot-vpn.service`) hanya diaktifkan otomatis bila token diisi saat instalasi. Jika token diisi kemudian, jalankan:
+Contoh:
 
 ```bash
-systemctl enable --now bot-vpn
+curl -H "X-API-Key: $API_KEY" http://127.0.0.1:8088/v1/status
+curl -X POST http://127.0.0.1:8088/v1/accounts \
+  -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: order-123' \
+  -d '{"service":"ssh","days":7,"username":"contoh_01"}'
 ```
 
-Status service dapat diperiksa dengan `status` atau `systemctl status <nama-service>`.
+Idempotency-Key yang sama dan request sama mengembalikan respons pertama selama 24 jam; request berbeda menghasilkan 409. OpenVPN renew menghasilkan 501 karena sertifikat tidak dapat diperpanjang. Xray hanya ditawarkan ketika inbound, Nginx websocket route dan port terkait terdeteksi hidup. Pada instalasi default front proxy belum tersedia, sehingga VMess, VLESS, dan Trojan tampil `available:false`.
 
-## Expired akun
+### Profil klien Xray
 
-Masa aktif input dalam satuan hari. Tanggal expired adalah awal hari tersebut pada zona waktu VPS (00:00). Pada menit pertama tanggal expired:
-
-- akun SSH ditutup dan dihapus;
-- akun Xray dihapus dari konfigurasi lalu Xray direstart;
-- profil OpenVPN TCP/UDP dihapus, sertifikatnya dicabut, CRL diperbarui, lalu kedua service OpenVPN direstart.
-
-Timer memakai `Persistent=true`, sehingga bila VPS mati saat jadwal lewat, cleanup akan dijalankan segera setelah VPS kembali hidup. Cek status dan log:
+Untuk menerbitkan tautan klien TLS/WebSocket pada VM yang sudah terpasang, arahkan A record domain ke IPv4 publik VM, izinkan TCP 80 dan 443 pada firewall VM dan firewall cloud, lalu jalankan:
 
 ```bash
-systemctl status vpn-expiry-cleanup.timer
-systemctl list-timers vpn-expiry-cleanup.timer
-/etc/vpn/scripts/system/cleanup.sh --verbose
-tail -f /var/log/vpn/cleanup.log
+sudo bash /etc/vpn/scripts/system/configure-xray-proxy.sh vm1.example.com
 ```
 
-## Batas koneksi dan trial
+Skrip meminta sertifikat Let's Encrypt dan memasang rute WebSocket di Nginx tanpa mem-proxy API administrasi. Setelah aktif, menu pembuatan VMess/VLESS/Trojan menampilkan tautan impor. Tautan VMess berisi JSON profil yang di-Base64-kan; UUID saja bukan tautan lengkap.
 
-- Satu akun OpenVPN hanya dapat memiliki satu koneksi aktif, termasuk bila mencoba memakai profil TCP dan UDP bersamaan. Koneksi kedua ditolak saat proses connect.
-- Satu akun SSH dibatasi satu sesi interaktif aktif. Timer `vpn-session-limit.timer` menutup sesi tambahan paling lambat dalam satu menit. Log ada di `/var/log/vpn/session-limit.log`.
-- Satu akun Telegram hanya dapat membuat satu paket trial per tanggal server. Catatan disimpan di `/etc/vpn/bot/trial_users.json`, sehingga aturan tetap berlaku setelah bot atau VPS direstart.
+### Akses dari luar dengan HTTPS
 
-Xray tidak menyediakan pembatas jumlah koneksi aktif per pengguna pada konfigurasi inbound standar ini. Karena itu, script tidak mengklaim membatasi multi-login Xray; pembatasan tersebut memerlukan proxy/session store eksternal atau sistem autentikasi tambahan.
+Jangan membuka port 8088 atau 10085. DNS `api.<domain>` harus mengarah ke server dan sertifikat TLS harus valid. Contoh konfigurasi Nginx (sesuaikan path sertifikat):
 
-## Port yang benar-benar dikonfigurasi
-
-| Komponen | Port |
-|---|---|
-| OpenSSH | 22/TCP |
-| OpenVPN TCP | 1194/TCP |
-| OpenVPN UDP | 1194/UDP |
-| BadVPN UDPGW | 127.0.0.1:7100, 7200, 7300/UDP |
-| Xray VMess WS | 10001/TCP |
-| Xray VLESS WS | 10002/TCP |
-| Xray Trojan WS | 10003/TCP |
-
-Nginx, Dropbear, dan Stunnel dipasang tetapi installer ini belum menulis konfigurasi port/proxy khusus untuk SSH WebSocket, TLS, Cloudflare, atau gRPC. Jangan menganggap port 80/443 sudah menjadi tunnel aktif sebelum konfigurasi tersebut ditambahkan.
-
-## Perintah CLI
-
-- `menu`: menu utama.
-- `menu-ssh`: kelola akun SSH.
-- `menu-xray vmess|vless|trojan`: kelola akun Xray.
-- `menu-ovpn`: kelola profil OpenVPN TCP/UDP.
-- `running` atau `status`: status sistem.
-- `restart-service`: menu restart service.
-- `vpn-cli`: CLI JSON untuk integrasi bot/API.
-
-## Bot Telegram
-
-Saat instalasi, masukkan token bot dan Admin User ID bila sudah tersedia. Installer juga menawarkan konfigurasi Xendit untuk pembayaran QRIS otomatis. Ambil **Secret API Key** dari dashboard Xendit; gunakan Test Secret Key untuk pengujian dan Live Secret Key untuk transaksi produksi.
-
-Bot memakai Xendit Payments API v3, endpoint `/v3/payment_requests`, API version `2024-11-11`, dan channel `QRIS`. Saat pelanggan memilih paket, bot membuat QRIS dinamis; akun hanya dibuat setelah status Payment Request dari Xendit adalah `SUCCEEDED`.
-
-Konfigurasi disimpan di `/etc/vpn/bot/config.json`:
-
-```json
-{
-  "xendit": {
-    "secret_key": "xnd_development_atau_live_secret_key"
-  }
+```nginx
+limit_req_zone $binary_remote_addr zone=vpn_api:10m rate=10r/s;
+server {
+    listen 443 ssl;
+    server_name api.example.com;
+    ssl_certificate /etc/letsencrypt/live/api.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
+    client_max_body_size 16k;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    location / {
+        limit_req zone=vpn_api burst=10 nodelay;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_pass http://127.0.0.1:8088;
+    }
 }
 ```
 
-Jaga Secret API Key tetap rahasia; jangan kirimkan ke chat atau commit ke repository. Tanpa key, bot menolak pembayaran dan tidak membuat akun otomatis. Setelah mengubah token, admin ID, atau konfigurasi Xendit:
+Batasi hanya server web jika diperlukan dengan `allow <ip-web>; deny all;` di dalam `location`. Jangan aktifkan CORS kecuali browser mengakses API secara langsung dan origin memang dibutuhkan. Tanpa TLS installer membiarkan API hanya di loopback.
+
+## Cleanup, sesi, dan sertifikat
+
+- `vpn-expiry-cleanup.timer` memeriksa registry tiap menit. Expiry menggunakan UTC epoch; aksi akun tidak me-restart service bersama.
+- `vpn-session-guard.service` memeriksa sesi OpenVPN dan SSH tiap 5–10 detik. Koneksi OpenVPN terbaru dipertahankan; untuk SSH sesi tertua dipertahankan. Xray tidak dapat diputus berdasarkan statistik user pada konfigurasi saat ini.
+- OpenVPN membagi CN/sertifikat antar TCP dan UDP. Sertifikat dicabut saat entry terakhir CN dihapus; CRL diperbarui sekali per batch dan mingguan oleh `vpn-crl-refresh.timer`.
+- Profil OpenVPN tidak di-renew. Buat akun/sertifikat baru setelah menghapus entry lama.
+- AutoKill menu menyimpan `MAX_SESSIONS` dan `INTERVAL` di `/etc/vpn/limits.conf`, lalu mengirim HUP ke session guard.
+
+Gunakan `vpn-cli doctor`, `journalctl -u vpn-api -u vpn-session-guard`, dan `/var/log/vpn/cleanup.log` untuk diagnosis. File registry ada di `/var/lib/vpn/accounts.db` (WAL; izin terbatas). Migrasi legacy aman diulang dengan `vpn-cli migrate`.
+
+## Pengujian dan batas verifikasi
 
 ```bash
-systemctl enable --now bot-vpn
-systemctl restart bot-vpn
-journalctl -u bot-vpn -f
+python -m pip install -r requirements-dev.txt
+python -m pytest -p no:cacheprovider tests/ -q
 ```
 
-## Catatan OpenVPN
+Tes lokal memverifikasi library dan kontrak API memakai DryRunDriver. Ubuntu 24.04 sudah diuji dengan instalasi nyata, Xray add/remove, EasyRSA dan CRL, API auth/CRUD, expiry, serta snapshot PID/timestamp service. Uji klien aktif untuk session limit, `client-kill`, koneksi profil OpenVPN, CRL pada handshake baru, dan HTTPS/certbot masih diperlukan sebelum produksi.
 
-Server menggunakan CRL pada `/etc/openvpn/crl.pem`. Karena itu, sertifikat yang dicabut oleh menu hapus atau cleanup expired tidak dapat dipakai lagi setelah service direstart oleh proses tersebut.
+Pada VM test yang sudah diinstal, jalankan `sudo bash tests/vm_smoke.sh` untuk menguji create/delete akun SSH, semua protokol Xray, sertifikat bersama OpenVPN TCP/UDP, CRL, API auth, dan memastikan PID serta waktu aktif service tidak berubah. Script membuat akun sementara acak dan membersihkannya saat selesai.

@@ -11,9 +11,11 @@ TOTAL_RAM=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
 USED_RAM=$(awk '/MemAvailable/ {total='"${TOTAL_RAM}"'; avail=int($2/1024); print total-avail}' /proc/meminfo)
 CPU=$(top -bn1 | grep "Cpu(s)" | awk '{printf "%.0f", $2+$4}')
 
-SSH_COUNT=$(awk -F: '$3 >= 1000 && $1 != "nobody" {c++} END {print c+0}' /etc/passwd)
-VMESS_COUNT=$(grep -c '"email"' /etc/xray/config.json 2>/dev/null || true)
-VMESS_COUNT=${VMESS_COUNT:-0}
+registry_count() { /usr/bin/vpn-cli list --service "$1" 2>/dev/null | jq '.data | length' 2>/dev/null || echo 0; }
+SSH_COUNT=$(registry_count ssh)
+VMESS_COUNT=$(registry_count vmess)
+VLESS_COUNT=$(registry_count vless)
+TROJAN_COUNT=$(registry_count trojan)
 OVPN_TCP=$(grep "^CLIENT_LIST" /etc/openvpn/server/openvpn-tcp.log 2>/dev/null | wc -l)
 OVPN_UDP=$(grep "^CLIENT_LIST" /etc/openvpn/server/openvpn-udp.log 2>/dev/null | wc -l)
 TODAY_DATE=$(date +"%A, %d %B %Y | %H:%M WIB")
@@ -29,17 +31,19 @@ printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "RAM" "${USED_RAM}/${TOTAL_RAM}
 printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "CPU" "${CPU}%"
 printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "Tanggal" "${TODAY_DATE}"
 
-section "KONEKSI AKTIF"
-printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "SSH User" "${SSH_COUNT}"
-printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "Xray User" "${VMESS_COUNT}"
+section "AKUN & KONEKSI"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "SSH AKUN" "${SSH_COUNT}"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "VMess AKUN" "${VMESS_COUNT}"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "VLESS AKUN" "${VLESS_COUNT}"
+printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "Trojan AKUN" "${TROJAN_COUNT}"
 printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "OVPN TCP" "${OVPN_TCP}"
 printf "  ${BWHITE}%-10s${NC}: ${CYAN}%s${NC}\n" "OVPN UDP" "${OVPN_UDP}"
 
 section "MENU LAYANAN"
 echo -e "  ${BCYAN}[1]${NC}  ${BWHITE}SSH${NC}          Kelola akun SSH"
-echo -e "  ${BCYAN}[2]${NC}  ${BWHITE}VMess${NC}        WS TLS, non-TLS, gRPC"
-echo -e "  ${BCYAN}[3]${NC}  ${BWHITE}VLess${NC}        WS TLS, non-TLS, gRPC"
-echo -e "  ${BCYAN}[4]${NC}  ${BWHITE}Trojan${NC}       WS, gRPC"
+echo -e "  ${BCYAN}[2]${NC}  ${BWHITE}VMess${NC}        Kelola akun"
+echo -e "  ${BCYAN}[3]${NC}  ${BWHITE}VLess${NC}        Kelola akun"
+echo -e "  ${BCYAN}[4]${NC}  ${BWHITE}Trojan${NC}       Kelola akun"
 echo -e "  ${BCYAN}[5]${NC}  ${BWHITE}OpenVPN${NC}      TCP dan UDP"
 echo -e "  ${BCYAN}[6]${NC}  ${BWHITE}Status${NC}       Periksa seluruh service"
 echo -e "  ${BCYAN}[7]${NC}  ${BWHITE}Restart${NC}      Restart service"

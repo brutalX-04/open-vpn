@@ -1,0 +1,157 @@
+#!/bin/bash
+set -euo pipefail
+
+HOST="${1:-}"
+if [[ "${EUID}" -ne 0 ]]; then
+    echo "Run this script as root." >&2
+    exit 1
+fi
+if [[ ! "${HOST}" =~ ^[A-Za-z0-9.-]+$ || "${HOST}" != *.* ]]; then
+    echo "Usage: $0 <public-domain>" >&2
+    exit 2
+fi
+
+PUBLIC_IP=$(curl -4fsS --max-time 10 https://api.ipify.org)
+DNS_IP=$(getent ahostsv4 "${HOST}" | awk 'NR == 1 {print $1}')
+if [[ -z "${DNS_IP}" || "${DNS_IP}" != "${PUBLIC_IP}" ]]; then
+    echo "DNS A record for ${HOST} must resolve to this VM's public IPv4 (${PUBLIC_IP})." >&2
+    exit 1
+fi
+
+if command -v iptables >/dev/null 2>&1 && ! iptables -C INPUT -p tcp -m multiport --dports 80,443 -m state --state NEW -j ACCEPT 2>/dev/null; then
+    REJECT_RULE=$(iptables -L INPUT --line-numbers -n | awk '/REJECT/ {print $1; exit}')
+    if [[ -n "${REJECT_RULE}" ]]; then
+        iptables -I INPUT "${REJECT_RULE}" -p tcp -m multiport --dports 80,443 -m state --state NEW -j ACCEPT
+    else
+        iptables -I INPUT 1 -p tcp -m multiport --dports 80,443 -m state --state NEW -j ACCEPT
+    fi
+    if command -v netfilter-persistent >/dev/null 2>&1; then
+        netfilter-persistent save
+    fi
+fi
+
+apt-get update -y
+apt-get install -y certbot nginx
+
+mkdir -p /var/www/html/.well-known/acme-challenge /etc/nginx/sites-available /etc/nginx/sites-enabled
+SITE=/etc/nginx/sites-available/vpn-xray
+cat >"${SITE}" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${HOST};
+    location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 404; }
+}
+EOF
+ln -sfn "${SITE}" /etc/nginx/sites-enabled/vpn-xray
+nginx -t
+systemctl reload nginx
+
+certbot certonly --webroot -w /var/www/html -d "${HOST}" --non-interactive \
+    --agree-tos --register-unsafely-without-email --keep-until-expiring
+
+cat >"${SITE}" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${HOST};
+    location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://\$host\$request_uri; }
+}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ${HOST};
+    ssl_certificate /etc/letsencrypt/live/${HOST}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${HOST}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    location = /vmess {
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_read_timeout 360s;
+        proxy_pass http://127.0.0.1:10001;
+    }
+    location = /vless {
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_read_timeout 360s;
+        proxy_pass http://127.0.0.1:10002;
+    }
+    location = /trojan-ws {
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_read_timeout 360s;
+        proxy_pass http://127.0.0.1:10003;
+    }
+    location / { return 404; }
+}
+EOF
+nginx -t
+systemctl reload nginx
+
+python3 - "${HOST}" <<'PY'
+import os
+import sys
+import tempfile
+
+host = sys.argv[1]
+
+def update(path, values, mode=None):
+    try:
+        with open(path, encoding="utf-8") as stream:
+            lines = stream.readlines()
+    except FileNotFoundError:
+        lines = []
+    seen = set()
+    output = []
+    for line in lines:
+        key = line.partition("=")[0].strip()
+        if key in values:
+            if key not in seen:
+                output.append(f"{key}={values[key]}\n")
+                seen.add(key)
+        else:
+            output.append(line if line.endswith("\n") else line + "\n")
+    for key, value in values.items():
+        if key not in seen:
+            output.append(f"{key}={value}\n")
+    directory = os.path.dirname(path)
+    fd, temporary = tempfile.mkstemp(prefix=".xray-proxy-", dir=directory, text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.writelines(output)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if mode is not None:
+            os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+update("/etc/vpn/config.conf", {"DOMAIN": host})
+update("/etc/vpn/api.env", {"DOMAIN": host, "XRAY_FRONT_PROXY": "1"}, 0o600)
+PY
+
+mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+cat >/etc/letsencrypt/renewal-hooks/deploy/vpn-xray-reload-nginx <<'HOOK'
+#!/bin/sh
+systemctl reload nginx
+HOOK
+chmod 755 /etc/letsencrypt/renewal-hooks/deploy/vpn-xray-reload-nginx
+systemctl restart vpn-api.service
+
+HTTP_STATUS=$(curl -sS -o /dev/null -w '%{http_code}' "https://${HOST}/")
+if [[ "${HTTP_STATUS}" != "404" ]]; then
+    echo "HTTPS validation returned HTTP ${HTTP_STATUS}, expected 404 on the private root path." >&2
+    exit 1
+fi
+
+echo "Xray TLS/WebSocket proxy is active for ${HOST}; the administrative API remains loopback-only."
