@@ -18,7 +18,7 @@ divider
 
 COUNT_TCP=0
 if [[ -f "${LOG_TCP}" ]]; then
-    while IFS=',' read -r _ USER CLIENT_IP _ _ _ _ SINCE _; do
+    while IFS=',' read -r _ USER CLIENT_IP _ _ _ _ _ _ SINCE _ _ _; do
         printf "  %-20s %-18s %-20s\n" "${USER}" "${CLIENT_IP}" "${SINCE}"
         (( COUNT_TCP++ ))
     done < <(grep "^CLIENT_LIST" "${LOG_TCP}" 2>/dev/null)
@@ -33,7 +33,7 @@ divider
 
 COUNT_UDP=0
 if [[ -f "${LOG_UDP}" ]]; then
-    while IFS=',' read -r _ USER CLIENT_IP _ _ _ _ SINCE _; do
+    while IFS=',' read -r _ USER CLIENT_IP _ _ _ _ _ _ SINCE _ _ _; do
         printf "  %-20s %-18s %-20s\n" "${USER}" "${CLIENT_IP}" "${SINCE}"
         (( COUNT_UDP++ ))
     done < <(grep "^CLIENT_LIST" "${LOG_UDP}" 2>/dev/null)
