@@ -18,6 +18,28 @@ chmod +x install.sh
 
 Installer mempertahankan PKI dan config Xray yang telah ada, menjalankan migrasi registry idempoten, dan menampilkan API key hanya saat pertama kali dibuat. Key disimpan di `/etc/vpn/api.env` dengan mode `0600`.
 
+## Menghapus instalasi
+
+Jalankan uninstaller dari repository dengan hak root:
+
+```bash
+sudo bash uninstall.sh
+```
+
+Uninstaller meminta konfirmasi dengan mengetik `uninstall`, lalu menghapus unit layanan VPN, tautan perintah, dan situs Nginx milik installer. Secara default, konfigurasi, akun, registry, PKI, log, paket, serta sertifikat Let's Encrypt dipertahankan. Layanan sistem bersama seperti SSH, cron, Nginx, dan fail2ban juga tetap aktif.
+
+Untuk sekaligus menghapus akun terkelola dan data VPN, termasuk konfigurasi, database registry, PKI OpenVPN, serta konfigurasi Xray, gunakan:
+
+```bash
+sudo bash uninstall.sh --purge-data
+```
+
+Opsi tambahan:
+
+- `--purge-packages` menghapus paket `openvpn`, `easy-rsa`, `dropbear`, dan `stunnel4`; paket bersama dan dependensi tidak di-autoremove.
+- `--remove-firewall` menghapus aturan iptables VPN yang cocok untuk port 1194 dan NAT. Aturan identik yang sudah ada sebelum instalasi mungkin ikut terhapus.
+- `--yes` melewati prompt konfirmasi; gunakan hanya jika opsi yang dipilih sudah diperiksa.
+
 ## Perintah
 
 Menu interaktif: `menu`, `menu-ssh`, `menu-xray`, `menu-ovpn`, `status`, dan `restart-service`.
