@@ -38,6 +38,10 @@ mkdir -p /var/www/html/.well-known/acme-challenge /etc/nginx/sites-available /et
 # token files. Existing webroot permissions may have been tightened by another
 # service, which otherwise makes the ACME URL return 403.
 chmod 755 /var/www/html /var/www/html/.well-known /var/www/html/.well-known/acme-challenge
+mkdir -p /etc/nginx/conf.d
+cat >/etc/nginx/conf.d/vpn-api-rate.conf <<'EOF'
+limit_req_zone $binary_remote_addr zone=vpn_api:10m rate=10r/s;
+EOF
 SITE=/etc/nginx/sites-available/vpn-xray
 cat >"${SITE}" <<EOF
 server {
@@ -74,6 +78,18 @@ then
     exit 1
 fi
 
+# The installer may have enabled a separate API vhost on this same hostname.
+# The combined TLS vhost below serves both Xray and API paths, so disable the
+# duplicate site when it targets this exact host. Do this only after the
+# certificate is available, so a failed issuance leaves the old API vhost up.
+API_LINK=/etc/nginx/sites-enabled/vpn-api
+if [[ -L "${API_LINK}" ]]; then
+    API_TARGET=$(readlink -f "${API_LINK}" || true)
+    if [[ -n "${API_TARGET}" ]] && grep -Fq "server_name ${HOST};" "${API_TARGET}"; then
+        rm -f "${API_LINK}"
+    fi
+fi
+
 cat >"${SITE}" <<EOF
 server {
     listen 80;
@@ -89,6 +105,15 @@ server {
     ssl_certificate /etc/letsencrypt/live/${HOST}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${HOST}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 16k;
+    location ^~ /v1/ {
+        limit_req zone=vpn_api burst=10 nodelay;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_pass http://127.0.0.1:8088;
+    }
     location = /vmess {
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
@@ -177,4 +202,4 @@ if [[ "${HTTP_STATUS}" != "404" ]]; then
     exit 1
 fi
 
-echo "Xray TLS/WebSocket proxy is active for ${HOST}; the administrative API remains loopback-only."
+echo "Xray TLS/WebSocket proxy is active for ${HOST}; API /v1/ is proxied over HTTPS and remains bound to localhost on port 8088."
