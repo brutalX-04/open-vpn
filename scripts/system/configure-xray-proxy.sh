@@ -34,6 +34,10 @@ apt-get update -y
 apt-get install -y certbot nginx
 
 mkdir -p /var/www/html/.well-known/acme-challenge /etc/nginx/sites-available /etc/nginx/sites-enabled
+# Nginx must be able to traverse every webroot directory and read Certbot's
+# token files. Existing webroot permissions may have been tightened by another
+# service, which otherwise makes the ACME URL return 403.
+chmod 755 /var/www/html /var/www/html/.well-known /var/www/html/.well-known/acme-challenge
 SITE=/etc/nginx/sites-available/vpn-xray
 cat >"${SITE}" <<EOF
 server {
@@ -48,8 +52,27 @@ ln -sfn "${SITE}" /etc/nginx/sites-enabled/vpn-xray
 nginx -t
 systemctl reload nginx
 
-certbot certonly --webroot -w /var/www/html -d "${HOST}" --non-interactive \
+# Check the exact Host header and challenge location locally before asking the
+# CA to validate it. This catches Nginx vhost conflicts and webroot permission
+# errors with a useful message instead of an opaque ACME unauthorized error.
+PROBE_TOKEN="vpn-acme-probe-$(date +%s)-$$"
+PROBE_FILE="/var/www/html/.well-known/acme-challenge/${PROBE_TOKEN}"
+printf '%s' "${PROBE_TOKEN}" >"${PROBE_FILE}"
+chmod 644 "${PROBE_FILE}"
+PROBE_BODY=$(curl --noproxy '*' -fsS --max-time 5 --resolve "${HOST}:80:127.0.0.1" \
+    "http://${HOST}/.well-known/acme-challenge/${PROBE_TOKEN}" 2>/dev/null || true)
+rm -f "${PROBE_FILE}"
+if [[ "${PROBE_BODY}" != "${PROBE_TOKEN}" ]]; then
+    echo "Nginx cannot serve the ACME webroot locally for ${HOST}. Check for another port-80 virtual host or access restrictions." >&2
+    exit 1
+fi
+
+if ! certbot certonly --webroot -w /var/www/html -d "${HOST}" --non-interactive \
     --agree-tos --register-unsafely-without-email --keep-until-expiring
+then
+    echo "Let's Encrypt could not fetch the challenge for ${HOST}. Confirm its DNS A/AAAA records point to this VPS, TCP port 80 is reachable in the cloud firewall, and any CDN/proxy allows /.well-known/acme-challenge/." >&2
+    exit 1
+fi
 
 cat >"${SITE}" <<EOF
 server {
