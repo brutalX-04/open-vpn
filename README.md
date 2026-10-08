@@ -69,7 +69,7 @@ Idempotency-Key yang sama dan request sama mengembalikan respons pertama selama 
 Untuk menerbitkan tautan klien TLS/WebSocket pada VM yang sudah terpasang, arahkan A record domain ke IPv4 publik VM, izinkan TCP 80 dan 443 pada firewall VM dan firewall cloud, lalu jalankan:
 
 ```bash
-sudo bash /etc/vpn/scripts/system/configure-xray-proxy.sh vm1.example.com
+sudo bash /etc/vpn/scripts/system/configure-xray-proxy.sh api.vm1.example.com
 ```
 
 Skrip meminta sertifikat Let's Encrypt dan memasang rute WebSocket di Nginx tanpa mem-proxy API administrasi. Setelah aktif, menu pembuatan VMess/VLESS/Trojan menampilkan tautan impor. Tautan VMess berisi JSON profil yang di-Base64-kan; UUID saja bukan tautan lengkap.
