@@ -158,17 +158,39 @@ PasswordAuthentication yes
 EOF
 chmod 0644 "${SSHD_VPN_CONFIG}"
 
-# Validate before reloading so a malformed drop-in cannot disrupt SSH access.
-if sshd -t; then
-    if systemctl is-active --quiet ssh.service; then
-        systemctl reload ssh.service
-    elif systemctl is-active --quiet sshd.service; then
-        systemctl reload sshd.service
-    fi
-else
+# Check syntax and the effective value before touching the running service.
+# sshd uses the first value found, so this also catches cloud images or local
+# Match rules that still disable passwords despite the early drop-in.
+if ! sshd -t; then
     echo -e "${RED}[ERROR] Konfigurasi SSH tidak valid; periksa ${SSHD_VPN_CONFIG}.${NC}"
     exit 1
 fi
+SSHD_PASSWORD_AUTH=$(sshd -T -C user=vpn-auth-check,host=localhost,addr=127.0.0.1 2>/dev/null \
+    | awk '$1 == "passwordauthentication" { print $2; exit }')
+if [[ "${SSHD_PASSWORD_AUTH}" != "yes" ]]; then
+    echo -e "${RED}[ERROR] sshd masih menonaktifkan autentikasi password (PasswordAuthentication=${SSHD_PASSWORD_AUTH:-unknown}).${NC}"
+    echo -e "${YELLOW}Periksa Include/Match di /etc/ssh/sshd_config dan file di /etc/ssh/sshd_config.d/.${NC}"
+    exit 1
+fi
+
+# Ensure the SSH daemon is running with the validated configuration now.
+if systemctl is-active --quiet ssh.service; then
+    if ! systemctl reload ssh.service; then
+        echo -e "${RED}[ERROR] Gagal memuat ulang ssh.service.${NC}"
+        exit 1
+    fi
+elif systemctl is-active --quiet sshd.service; then
+    if ! systemctl reload sshd.service; then
+        echo -e "${RED}[ERROR] Gagal memuat ulang sshd.service.${NC}"
+        exit 1
+    fi
+else
+    if ! systemctl enable --now ssh.service && ! systemctl enable --now sshd.service; then
+        echo -e "${RED}[ERROR] Gagal mengaktifkan layanan SSH.${NC}"
+        exit 1
+    fi
+fi
+echo -e "${GREEN}[INFO] SSH aktif dengan PasswordAuthentication=${SSHD_PASSWORD_AUTH}; akun VPN tetap memakai shell tunnel-only.${NC}"
 
 python3 -m venv /etc/vpn/venv
 /etc/vpn/venv/bin/pip install --upgrade pip
