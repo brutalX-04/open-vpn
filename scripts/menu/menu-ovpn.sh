@@ -8,7 +8,7 @@ clear
 header "  MENU OPENVPN (TCP & UDP)  "
 echo ""
 echo -e "  ${BCYAN}[1]${NC}  Buat Akun OpenVPN TCP"
-echo -e "  ${BPURPLE}[2]${NC}  Buat Akun OpenVPN UDP (Low Latency)"
+echo -e "  ${BCYAN}[2]${NC}  Buat Akun OpenVPN UDP (Low Latency)"
 echo -e "  ${BCYAN}[3]${NC}  Hapus Akun OpenVPN"
 echo -e "  ${BCYAN}[4]${NC}  Daftar Akun OpenVPN"
 echo -e "  ${BCYAN}[5]${NC}  Cek Koneksi Aktif (TCP & UDP)"

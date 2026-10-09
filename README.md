@@ -100,7 +100,7 @@ sudo bash /etc/vpn/scripts/system/configure-xray-proxy.sh vm1.example.com
 
 Skrip meminta sertifikat Let's Encrypt dan memasang rute WebSocket di Nginx. Pada host yang sama, rute `/v1/` juga diteruskan ke API lokal `127.0.0.1:8088` melalui HTTPS; API key tetap wajib untuk endpoint administrasi selain health. Jika installer sebelumnya membuat vhost `vpn-api` untuk host ini, skrip menonaktifkan symlink duplikat dan menggabungkan layanan dalam vhost Xray. Setelah aktif, menu pembuatan VMess/VLESS/Trojan menampilkan tautan impor. Tautan VMess berisi JSON profil yang di-Base64-kan; UUID saja bukan tautan lengkap.
 
-Setup front proxy juga mengaktifkan SSH over WebSocket melalui Nginx pada TCP 80 (WS) dan 443 (WSS). Port 443 memerlukan sertifikat TLS untuk domain tersebut. Akun tunnel tetap memakai shell noninteraktif; SSH TCP forwarding harus aktif. BadVPN UDPGW mendengarkan hanya di loopback pada port 7100, 7200, dan 7300, sehingga dipakai oleh klien melalui tunnel SSH. OpenVPN UDP adalah layanan terpisah di UDP 1194 dan memerlukan profil OpenVPN. Izinkan TCP 80/443 dan UDP 1194 di firewall cloud; aturan iptables installer hanya berlaku di dalam VPS.
+Setup front proxy juga mengaktifkan SSH over WebSocket melalui Nginx pada TCP 80 (WS) dan 443 (WSS). Port 443 memerlukan sertifikat TLS untuk domain tersebut. Akun tunnel tetap memakai shell noninteraktif; SSH TCP forwarding harus aktif. BadVPN UDPGW mendengarkan hanya di loopback pada port 7100, 7200, dan 7300, sehingga dipakai oleh klien melalui tunnel SSH. OpenVPN TCP dan UDP adalah layanan terpisah pada port 1194 di protokol masing-masing dan memerlukan profil OpenVPN. Izinkan TCP 80, 443, 1194 serta UDP 1194 di firewall cloud; aturan iptables installer hanya berlaku di dalam VPS.
 
 ### Akses dari luar dengan HTTPS
 
@@ -145,6 +145,6 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -p no:cacheprovider tests/ -q
 ```
 
-Tes lokal memverifikasi library dan kontrak API memakai DryRunDriver. Ubuntu 24.04 sudah diuji dengan instalasi nyata, Xray add/remove, EasyRSA dan CRL, API auth/CRUD, expiry, serta snapshot PID/timestamp service. Uji klien aktif untuk session limit, `client-kill`, koneksi profil OpenVPN, CRL pada handshake baru, dan HTTPS/certbot masih diperlukan sebelum produksi.
+Tes lokal memverifikasi library dan kontrak API memakai DryRunDriver. Ubuntu 24.04 sudah diuji dengan instalasi nyata, Xray add/remove, EasyRSA dan CRL, API auth/CRUD, expiry, serta snapshot PID/timestamp service. Koneksi profil OpenVPN TCP/UDP dan pembacaan CRL pada handshake sudah dikonfirmasi lewat OpenVPN Connect pada VM. Uji session limit dan `client-kill` masih diperlukan sebelum produksi.
 
 Pada VM test yang sudah diinstal, jalankan `sudo bash tests/vm_smoke.sh` untuk menguji create/delete akun SSH, semua protokol Xray, sertifikat bersama OpenVPN TCP/UDP, CRL, API auth, dan memastikan PID serta waktu aktif service tidak berubah. Script membuat akun sementara acak dan membersihkannya saat selesai.

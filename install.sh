@@ -306,8 +306,9 @@ if [[ ! -f pki/issued/server.crt ]]; then ./easyrsa --batch build-server-full se
 if [[ ! -f pki/crl.pem ]]; then ./easyrsa --batch gen-crl &>/dev/null; fi
 if [[ ! -f /etc/openvpn/ta.key ]]; then openvpn --genkey secret /etc/openvpn/ta.key &>/dev/null; fi
 
-cp pki/ca.crt pki/issued/server.crt pki/private/server.key pki/crl.pem /etc/openvpn/server/
-cp pki/crl.pem /etc/openvpn/crl.pem
+cp pki/ca.crt pki/issued/server.crt pki/private/server.key /etc/openvpn/server/
+install -o root -g nogroup -m 0644 pki/crl.pem /etc/openvpn/server/crl.pem
+install -o root -g nogroup -m 0644 pki/crl.pem /etc/openvpn/crl.pem
 
 # OpenVPN Server TCP Config
 cat > /etc/openvpn/server/server-tcp.conf <<EOF
