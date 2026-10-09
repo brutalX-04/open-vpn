@@ -218,8 +218,9 @@ else
     API_KEY_CREATED=0
 fi
 
-# Enable all installed core services now and on every reboot.
-systemctl enable --now ssh cron nginx dropbear stunnel4 fail2ban &>/dev/null || true
+# Enable core services now and on every reboot. Dropbear and Stunnel are
+# configured on their advertised tunnel ports below before they are started.
+systemctl enable --now ssh cron nginx fail2ban &>/dev/null || true
 
 if [[ "${PUBLIC_API_ENABLED}" == "1" ]]; then
     if bash "${SCRIPT_DIR}/scripts/system/configure-api-nginx.sh" "${PUBLIC_API_HOST}" "${API_ADMIN_EMAIL}"; then
@@ -382,7 +383,7 @@ NIC=$(ip -o -4 route show to default | awk '{print $5}' | head -1)
 iptables -t nat -C POSTROUTING -s 10.8.0.0/24 -o "${NIC}" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o "${NIC}" -j MASQUERADE
 iptables -t nat -C POSTROUTING -s 10.9.0.0/24 -o "${NIC}" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 10.9.0.0/24 -o "${NIC}" -j MASQUERADE
 
-# Permit only the installed SSH/OpenVPN listeners and HTTP(S) front proxy.
+# Permit the tunnel listeners, OpenVPN services, and HTTP(S) front proxy.
 # Insert before any terminal REJECT rule so the service ports are reachable.
 allow_input_port() {
     local protocol="$1" port="$2" reject_line
@@ -398,6 +399,7 @@ allow_input_port tcp 80
 allow_input_port tcp 443
 allow_input_port tcp 1194
 allow_input_port udp 1194
+bash "${SCRIPT_DIR}/scripts/system/configure-ssh-transports.sh"
 netfilter-persistent save &>/dev/null
 
 cat > /etc/systemd/system/vpn-openvpn-tcp.service <<'EOF'
