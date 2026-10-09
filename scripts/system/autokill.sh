@@ -25,16 +25,15 @@ echo ""
 show_status
 echo ""
 divider
-echo -e "  ${BCYAN}[1]${NC}  AutoKill setiap 5 menit"
-echo -e "  ${BCYAN}[2]${NC}  AutoKill setiap 10 menit"
-echo -e "  ${BCYAN}[3]${NC}  AutoKill setiap 15 menit"
+echo -e "  ${BCYAN}[1]${NC}  AutoKill setiap 5 detik"
+echo -e "  ${BCYAN}[2]${NC}  AutoKill setiap 10 detik"
 echo -e "  ${BRED}[4]${NC}  Matikan AutoKill"
 echo -e "  ${BYELLOW}[0]${NC}  Kembali"
 divider
 echo ""
-read -rp "$(echo -e "  ${BCYAN}Pilih [0-4]: ${NC}")" OPT
+read -rp "$(echo -e "  ${BCYAN}Pilih [0-2, 4]: ${NC}")" OPT
 
-if [[ "${OPT}" =~ ^[123]$ ]]; then
+if [[ "${OPT}" =~ ^[12]$ ]]; then
     echo ""
     read -rp "$(echo -e "  ${BCYAN}Maksimum sesi bersamaan per user: ${NC}")" MAX
     if ! [[ "${MAX}" =~ ^[0-9]+$ ]] || [[ "${MAX}" -lt 1 ]]; then
@@ -46,7 +45,6 @@ fi
 case "${OPT}" in
     1) INTERVAL=5 ;;
     2) INTERVAL=10 ;;
-    3) INTERVAL=15 ;;
     4)
         rm -f "${LIMITS_FILE}"
         systemctl kill -s HUP vpn-session-guard &>/dev/null || true

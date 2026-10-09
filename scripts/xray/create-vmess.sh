@@ -17,7 +17,7 @@ echo ""
 echo -e "  ${BWHITE}Username    ${NC}: ${BGREEN}${USERNAME}${NC}"
 echo -e "  ${BWHITE}UUID        ${NC}: ${CYAN}${UUID}${NC}"
 echo -e "  ${BWHITE}Expired     ${NC}: ${BGREEN}${EXPIRE}${NC}"
-if CONNECTION_LINK=$(python3 /etc/vpn/scripts/xray/connection-link.py vmess "${USERNAME}" "${UUID}" 2>/dev/null); then
+if CONNECTION_LINK=$(/etc/vpn/venv/bin/python /etc/vpn/scripts/xray/connection-link.py vmess "${USERNAME}" "${UUID}" 2>/dev/null); then
     echo -e "  ${BWHITE}VMess Link  ${NC}: ${CYAN}${CONNECTION_LINK}${NC}"
 else
     echo -e "  ${BYELLOW}Link belum tersedia: front-proxy TLS belum dikonfigurasi.${NC}"

@@ -21,6 +21,22 @@ from vpnctl.validate import validate_username
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("vpn.api")
 
+# Public client-facing listener ports, grouped by transport protocol. Xray's
+# internal loopback ports (10001-10003) are deliberately not advertised.
+SERVICE_PORTS = {
+    "ssh": {"tcp": [22, 80, 109, 143, 443, 447, 777], "udp": []},
+    "vmess": {"tcp": [80, 443], "udp": []},
+    "vless": {"tcp": [80, 443], "udp": []},
+    "trojan": {"tcp": [80, 443], "udp": []},
+    "ovpn-tcp": {"tcp": [1194], "udp": []},
+    "ovpn-udp": {"tcp": [], "udp": [1194]},
+}
+
+
+def _supported_ports(service):
+    ports = SERVICE_PORTS.get(service, {"tcp": [], "udp": []})
+    return {protocol: list(values) for protocol, values in ports.items()}
+
 
 def create_app(manager=None, api_key=None):
     settings = load_settings()
@@ -86,7 +102,8 @@ def create_app(manager=None, api_key=None):
         ]
         return data({"generated_at": iso_utc(int(time.time())), "services": [
             {"id": sid, "label": label, "available": available,
-             "reason": reason if reason else (None if available else "service unit is not active"), "max_days": days}
+             "reason": reason if reason else (None if available else "service unit is not active"),
+             "max_days": days, "ports": _supported_ports(sid)}
             for sid, label, available, reason, days in definitions]})
 
     @app.get("/v1/status", dependencies=[Depends(require_auth)])
@@ -156,11 +173,15 @@ def create_app(manager=None, api_key=None):
         result["created_at"] = iso_utc(result["created_at"])
         result["expires_at"] = iso_utc(result["expires_at"])
         if body.service == "ssh":
-            result["connection"] = {"host": app.state.domain, "password": result["meta"].get("password"), "ports": _listening_ports([22, 143, 109, 80, 443, 447, 777])}
+            result["connection"] = {"host": app.state.domain, "password": result["meta"].get("password"),
+                                    "ports": _listening_ports([22, 143, 109, 80, 443, 447, 777]),
+                                    "supported_ports": _supported_ports(body.service)}
         elif body.service.startswith("ovpn-"):
             result["connection"] = {k: result["meta"].get(k) for k in ("host", "port", "proto", "filename", "content")}
+            result["connection"]["supported_ports"] = _supported_ports(body.service)
         elif body.service in ("vmess", "vless", "trojan"):
             result["connection"] = _xray_connection(body.service, app.state.domain, result["meta"] | {"username": result["username"]}, xray_routes)
+            result["connection"]["supported_ports"] = _supported_ports(body.service)
         result.pop("meta", None)
         if idempotency_key:
             try: get_manager().registry.save_idempotency(idempotency_key, req_hash, result)

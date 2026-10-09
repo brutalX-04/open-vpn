@@ -2,6 +2,12 @@
 
 Server VPN dengan registry akun SQLite, cleanup berbasis masa aktif, pembatas sesi, menu lokal, dan REST API FastAPI. API hanya bind ke `127.0.0.1:8088`; akses dari luar harus melalui reverse proxy HTTPS yang dikelola admin.
 
+## Contoh Tampilan
+
+| Menu utama | Status layanan | Akun SSH |
+|---|---|---|
+| ![Menu utama](src/images/menu.png) | ![Status layanan VPN](src/images/server-status.png) | ![Detail akun SSH](src/images/ssh.png) |
+
 ## Lisensi
 
 Proyek ini dapat digunakan, diubah, dan dibagikan secara gratis sesuai [LICENSE](LICENSE). Penjualan, distribusi berbayar, dan eksploitasi komersial yang menjadikan perangkat lunak ini sebagai nilai utama tidak diizinkan. Lisensi ini adalah lisensi source-available dengan batasan komersial, bukan lisensi open source yang disetujui OSI.
@@ -88,7 +94,7 @@ curl -X POST http://127.0.0.1:8088/v1/accounts \
   -d '{"service":"ssh","days":7,"username":"contoh_01"}'
 ```
 
-Idempotency-Key yang sama dan request sama mengembalikan respons pertama selama 24 jam; request berbeda menghasilkan 409. OpenVPN renew menghasilkan 501 karena sertifikat tidak dapat diperpanjang. Xray hanya ditawarkan ketika inbound, Nginx websocket route dan port terkait terdeteksi hidup. Pada instalasi default front proxy belum tersedia, sehingga VMess, VLESS, dan Trojan tampil `available:false`.
+`GET /v1/services` menyertakan `ports` per layanan, dikelompokkan menurut `tcp` dan `udp`. Respons pembuatan akun juga menyertakan `connection.supported_ports`; untuk SSH, `connection.ports` yang sudah ada tetap menunjukkan status listener. Port publik yang dicantumkan mencakup SSH TCP 22/80/109/143/443/447/777, Xray TCP 80/443, dan OpenVPN TCP atau UDP 1194 sesuai jenis layanannya. Idempotency-Key yang sama dan request sama mengembalikan respons pertama selama 24 jam; request berbeda menghasilkan 409. OpenVPN renew menghasilkan 501 karena sertifikat tidak dapat diperpanjang. Xray hanya ditawarkan ketika inbound, Nginx websocket route dan port terkait terdeteksi hidup. Pada instalasi default front proxy belum tersedia, sehingga VMess, VLESS, dan Trojan tampil `available:false`.
 
 ### Profil klien Xray
 
