@@ -383,6 +383,24 @@ NIC=$(ip -o -4 route show to default | awk '{print $5}' | head -1)
 iptables -t nat -C POSTROUTING -s 10.8.0.0/24 -o "${NIC}" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o "${NIC}" -j MASQUERADE
 iptables -t nat -C POSTROUTING -s 10.9.0.0/24 -o "${NIC}" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 10.9.0.0/24 -o "${NIC}" -j MASQUERADE
 
+# Permit VPN clients to forward traffic through the VPS even when another
+# firewall has set the FORWARD chain policy to DROP.
+allow_forward_rule() {
+    iptables -C FORWARD "$@" 2>/dev/null && return 0
+    local reject_line
+    reject_line=$(iptables -L FORWARD --line-numbers -n | awk '$1 ~ /^[0-9]+$/ && $2 ~ /^(DROP|REJECT)$/ {print $1; exit}')
+    if [[ -n "${reject_line}" ]]; then
+        iptables -I FORWARD "${reject_line}" "$@"
+    else
+        iptables -I FORWARD 1 "$@"
+    fi
+}
+
+for VPN_SUBNET in 10.8.0.0/24 10.9.0.0/24; do
+    allow_forward_rule -s "${VPN_SUBNET}" -o "${NIC}" -j ACCEPT
+    allow_forward_rule -d "${VPN_SUBNET}" -i "${NIC}" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+done
+
 # Permit the tunnel listeners, OpenVPN services, and HTTP(S) front proxy.
 # Insert before any terminal REJECT rule so the service ports are reachable.
 allow_input_port() {
