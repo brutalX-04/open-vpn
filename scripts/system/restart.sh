@@ -56,6 +56,7 @@ while true; do
             do_restart "OpenVPN UDP" vpn-openvpn-udp
             do_restart "Nginx"       init:nginx
             do_restart "Xray"        xray
+            do_restart "SSH WebSocket" optional:vpn-ssh-ws.service
             do_restart "Websocket"   optional:ws-stunnel.service optional:ws-dropbear.service
             do_restart "Fail2Ban"    fail2ban
             do_restart "BadVPN UDPGW" badvpn-7100 badvpn-7200 badvpn-7300
@@ -67,7 +68,8 @@ while true; do
         6)  do_restart "OpenVPN UDP" vpn-openvpn-udp ;;
         7)  do_restart "Nginx"       init:nginx ;;
         8)  do_restart "Xray"        xray ;;
-        9)  do_restart "Websocket"   optional:ws-stunnel.service optional:ws-dropbear.service ;;
+        9)  do_restart "SSH WebSocket" optional:vpn-ssh-ws.service
+            do_restart "Websocket"   optional:ws-stunnel.service optional:ws-dropbear.service ;;
         10) do_restart "BadVPN UDPGW" badvpn-7100 badvpn-7200 badvpn-7300 ;;
         11) do_restart "Fail2Ban"    fail2ban ;;
         0)  menu; exit 0 ;;

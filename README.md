@@ -95,10 +95,12 @@ Idempotency-Key yang sama dan request sama mengembalikan respons pertama selama 
 Untuk menerbitkan tautan klien TLS/WebSocket pada VM yang sudah terpasang, arahkan A record domain ke IPv4 publik VM, izinkan TCP 80 dan 443 pada firewall VM dan firewall cloud, lalu jalankan:
 
 ```bash
-sudo bash /etc/vpn/scripts/system/configure-xray-proxy.sh api.vm1.example.com
+sudo bash /etc/vpn/scripts/system/configure-xray-proxy.sh vm1.example.com
 ```
 
 Skrip meminta sertifikat Let's Encrypt dan memasang rute WebSocket di Nginx. Pada host yang sama, rute `/v1/` juga diteruskan ke API lokal `127.0.0.1:8088` melalui HTTPS; API key tetap wajib untuk endpoint administrasi selain health. Jika installer sebelumnya membuat vhost `vpn-api` untuk host ini, skrip menonaktifkan symlink duplikat dan menggabungkan layanan dalam vhost Xray. Setelah aktif, menu pembuatan VMess/VLESS/Trojan menampilkan tautan impor. Tautan VMess berisi JSON profil yang di-Base64-kan; UUID saja bukan tautan lengkap.
+
+Setup front proxy juga mengaktifkan SSH over WebSocket melalui Nginx pada TCP 80 (WS) dan 443 (WSS). Port 443 memerlukan sertifikat TLS untuk domain tersebut. Akun tunnel tetap memakai shell noninteraktif; SSH TCP forwarding harus aktif. BadVPN UDPGW mendengarkan hanya di loopback pada port 7100, 7200, dan 7300, sehingga dipakai oleh klien melalui tunnel SSH. OpenVPN UDP adalah layanan terpisah di UDP 1194 dan memerlukan profil OpenVPN. Izinkan TCP 80/443 dan UDP 1194 di firewall cloud; aturan iptables installer hanya berlaku di dalam VPS.
 
 ### Akses dari luar dengan HTTPS
 

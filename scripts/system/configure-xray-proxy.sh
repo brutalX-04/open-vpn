@@ -33,6 +33,9 @@ fi
 apt-get update -y
 apt-get install -y certbot nginx
 
+# HTTP Custom SSH-over-WebSocket is proxied by Nginx to this loopback bridge.
+bash "$(dirname "${BASH_SOURCE[0]}")/enable-ssh-ws.sh"
+
 mkdir -p /var/www/html/.well-known/acme-challenge /etc/nginx/sites-available /etc/nginx/sites-enabled
 # Nginx must be able to traverse every webroot directory and read Certbot's
 # token files. Existing webroot permissions may have been tightened by another
@@ -96,7 +99,17 @@ server {
     listen [::]:80;
     server_name ${HOST};
     location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
-    location / { return 301 https://\$host\$request_uri; }
+    location / {
+        if (\$http_upgrade !~* "websocket") { return 301 https://\$host\$request_uri; }
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_read_timeout 360s;
+        proxy_buffering off;
+        limit_req zone=vpn_api burst=20 nodelay;
+        proxy_pass http://127.0.0.1:2222;
+    }
 }
 server {
     listen 443 ssl;
@@ -138,7 +151,18 @@ server {
         proxy_read_timeout 360s;
         proxy_pass http://127.0.0.1:10003;
     }
-    location / { return 404; }
+    # Default root route carries SSH over WebSocket; Xray paths above remain separate.
+    location / {
+        if (\$http_upgrade !~* "websocket") { return 404; }
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_read_timeout 360s;
+        proxy_buffering off;
+        limit_req zone=vpn_api burst=20 nodelay;
+        proxy_pass http://127.0.0.1:2222;
+    }
 }
 EOF
 nginx -t
@@ -202,4 +226,4 @@ if [[ "${HTTP_STATUS}" != "404" ]]; then
     exit 1
 fi
 
-echo "Xray TLS/WebSocket proxy is active for ${HOST}; API /v1/ is proxied over HTTPS and remains bound to localhost on port 8088."
+echo "Xray and SSH WebSocket proxies are active for ${HOST} on HTTPS; plain SSH WebSocket is available on port 80. API /v1/ remains bound to localhost on port 8088."

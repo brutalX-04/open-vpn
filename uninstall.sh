@@ -68,6 +68,7 @@ fi
 UNITS=(
     vpn-api.service
     vpn-session-guard.service
+    vpn-ssh-ws.service
     vpn-openvpn-tcp.service
     vpn-openvpn-udp.service
     vpn-expiry-cleanup.timer
@@ -79,10 +80,10 @@ UNITS=(
     badvpn-7300.service
 )
 
-# Stop recurring work and API/guard processes first. Keep OpenVPN and Xray
+# Stop recurring work and API/SSH-WebSocket bridge first. Keep OpenVPN and Xray
 # online until managed accounts have been deleted when --purge-data is used.
 systemctl disable --now vpn-expiry-cleanup.timer vpn-crl-refresh.timer \
-    vpn-api.service vpn-session-guard.service >/dev/null 2>&1 || true
+    vpn-api.service vpn-session-guard.service vpn-ssh-ws.service >/dev/null 2>&1 || true
 
 REGISTRY_DB=/var/lib/vpn/accounts.db
 if [[ -r /etc/vpn/api.env ]]; then
