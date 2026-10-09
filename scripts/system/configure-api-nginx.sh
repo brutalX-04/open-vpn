@@ -18,8 +18,7 @@ DNS_IPV6=$(getent ahostsv6 "${HOST}" | awk '{print $1}' | sort -u)
 if [[ -n "${DNS_IPV6}" ]]; then
     PUBLIC_IPV6=$(curl -6fsS --max-time 10 https://api64.ipify.org 2>/dev/null || true)
     if [[ -z "${PUBLIC_IPV6}" || "${DNS_IPV6}" != "${PUBLIC_IPV6}" ]]; then
-        echo "AAAA record for ${HOST} does not match this VPS IPv6 (${PUBLIC_IPV6:-no public IPv6 detected}); correct or remove the stale AAAA record." >&2
-        exit 1
+        echo "Warning: AAAA record for ${HOST} does not match this VPS IPv6 (${PUBLIC_IPV6:-no public IPv6 detected}). Continuing with the verified IPv4 A record; remove or correct the stale AAAA record so IPv6 clients and future certificate validation reach this VPS." >&2
     fi
 fi
 
@@ -47,6 +46,7 @@ else
 fi
 
 apt-get install -y certbot
+bash "$(dirname "${BASH_SOURCE[0]}")/enable-ssh-ws.sh"
 mkdir -p /var/www/html/.well-known/acme-challenge /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d
 chmod 755 /var/www/html /var/www/html/.well-known /var/www/html/.well-known/acme-challenge
 cat > /etc/nginx/conf.d/vpn-api-rate.conf <<'EOF'
@@ -88,7 +88,17 @@ server {
     listen 80;
     server_name ${HOST};
     location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
-    location / { return 301 https://\$host\$request_uri; }
+    location / {
+        if (\$http_upgrade !~* "websocket") { return 301 https://\$host\$request_uri; }
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_read_timeout 360s;
+        proxy_buffering off;
+        limit_req zone=vpn_api burst=20 nodelay;
+        proxy_pass http://127.0.0.1:2222;
+    }
 }
 server {
     listen 443 ssl;
@@ -107,6 +117,27 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_pass http://127.0.0.1:8088;
     }
+    location = / {
+        if (\$http_upgrade !~* "websocket") { return 404; }
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_read_timeout 360s;
+        proxy_buffering off;
+        limit_req zone=vpn_api burst=20 nodelay;
+        proxy_pass http://127.0.0.1:2222;
+    }
+    location = /ssh-ws {
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_read_timeout 360s;
+        proxy_buffering off;
+        limit_req zone=vpn_api burst=20 nodelay;
+        proxy_pass http://127.0.0.1:2222;
+    }
 }
 EOF
 if nginx -t; then
@@ -117,7 +148,7 @@ if nginx -t; then
 systemctl reload nginx
 HOOK
     chmod 755 /etc/letsencrypt/renewal-hooks/deploy/vpn-api-reload-nginx
-    echo "Public HTTPS API enabled at https://${HOST}; 8088 remains bound to localhost."
+    echo "Public HTTPS API and SSH WebSocket enabled at https://${HOST}; 8088 remains bound to localhost."
 else
     echo "Nginx validation failed. API remains loopback-only; repair ${SITE} before reloading Nginx." >&2
     exit 1
