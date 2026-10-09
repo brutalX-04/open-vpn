@@ -81,6 +81,10 @@ then
     exit 1
 fi
 
+# Refresh the Stunnel certificate and ensure Dropbear/Stunnel listeners are
+# configured after the domain certificate has been issued.
+bash "$(dirname "${BASH_SOURCE[0]}")/configure-ssh-transports.sh"
+
 # The installer may have enabled a separate API vhost on this same hostname.
 # The combined TLS vhost below serves both Xray and API paths, so disable the
 # duplicate site when it targets this exact host. Do this only after the
