@@ -18,8 +18,7 @@ DNS_IPV6=$(getent ahostsv6 "${HOST}" | awk '{print $1}' | sort -u)
 if [[ -n "${DNS_IPV6}" ]]; then
     PUBLIC_IPV6=$(curl -6fsS --max-time 10 https://api64.ipify.org 2>/dev/null || true)
     if [[ -z "${PUBLIC_IPV6}" || "${DNS_IPV6}" != "${PUBLIC_IPV6}" ]]; then
-        echo "AAAA record for ${HOST} does not match this VPS IPv6 (${PUBLIC_IPV6:-no public IPv6 detected}); correct or remove the stale AAAA record." >&2
-        exit 1
+        echo "Warning: AAAA record for ${HOST} does not match this VPS IPv6 (${PUBLIC_IPV6:-no public IPv6 detected}). Continuing with the verified IPv4 A record; remove or correct the stale AAAA record so IPv6 clients and future certificate validation reach this VPS." >&2
     fi
 fi
 
