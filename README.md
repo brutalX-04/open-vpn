@@ -2,6 +2,10 @@
 
 Server VPN dengan registry akun SQLite, cleanup berbasis masa aktif, pembatas sesi, menu lokal, dan REST API FastAPI. API hanya bind ke `127.0.0.1:8088`; akses dari luar harus melalui reverse proxy HTTPS yang dikelola admin.
 
+## Lisensi
+
+Proyek ini dapat digunakan, diubah, dan dibagikan secara gratis sesuai [LICENSE](LICENSE). Penjualan, distribusi berbayar, dan eksploitasi komersial yang menjadikan perangkat lunak ini sebagai nilai utama tidak diizinkan. Lisensi ini adalah lisensi source-available dengan batasan komersial, bukan lisensi open source yang disetujui OSI.
+
 ## Persyaratan
 
 - Debian 12, Ubuntu 22.04, atau Ubuntu 24.04, akses root, minimal RAM 1 GB.

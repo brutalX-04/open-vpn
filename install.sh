@@ -61,12 +61,28 @@ fi
 PUBLIC_API_ENABLED=0
 PUBLIC_API_HOST=""
 API_ADMIN_EMAIL=""
+XRAY_PROXY_ENABLED=0
+XRAY_PROXY_HOST=""
+XRAY_PROXY_SKIP_API=0
 if [[ "${DOMAIN}" != "${MYIP}" && "${DOMAIN}" =~ ^[A-Za-z0-9.-]+$ ]]; then
+    read -rp "Siapkan profil klien Xray TLS/WebSocket untuk ${DOMAIN} sekarang? (A record dan TCP 80/443 harus siap) [y/N]: " ENABLE_XRAY_PROXY
+    if [[ "${ENABLE_XRAY_PROXY}" =~ ^[Yy]$ ]]; then
+        XRAY_PROXY_ENABLED=1
+        XRAY_PROXY_HOST="${DOMAIN}"
+    fi
     PUBLIC_API_HOST="api.${DOMAIN}"
-    read -rp "Expose API via HTTPS di ${PUBLIC_API_HOST} (DNS harus sudah menunjuk ke VPS)? [y/N]: " ENABLE_PUBLIC_API
-    if [[ "${ENABLE_PUBLIC_API}" =~ ^[Yy]$ ]]; then
-        read -rp "Email admin untuk sertifikat Let's Encrypt: " API_ADMIN_EMAIL
-        PUBLIC_API_ENABLED=1
+    if [[ "${XRAY_PROXY_ENABLED}" == "1" ]]; then
+        read -rp "Expose API juga pada subdomain terpisah ${PUBLIC_API_HOST}? (perlu DNS dan email Let's Encrypt) [y/N]: " ENABLE_PUBLIC_API
+        if [[ "${ENABLE_PUBLIC_API}" =~ ^[Yy]$ ]]; then
+            read -rp "Email admin untuk sertifikat Let's Encrypt: " API_ADMIN_EMAIL
+            PUBLIC_API_ENABLED=1
+        fi
+    else
+        read -rp "Expose API via HTTPS di ${PUBLIC_API_HOST} (DNS harus sudah menunjuk ke VPS)? [y/N]: " ENABLE_PUBLIC_API
+        if [[ "${ENABLE_PUBLIC_API}" =~ ^[Yy]$ ]]; then
+            read -rp "Email admin untuk sertifikat Let's Encrypt: " API_ADMIN_EMAIL
+            PUBLIC_API_ENABLED=1
+        fi
     fi
 else
     echo -e "${YELLOW}[PERINGATAN] Domain TLS tidak tersedia. API tetap loopback-only; API key tidak akan dikirim lewat jaringan tanpa TLS.${NC}"
@@ -130,6 +146,29 @@ EOF
 echo -e "${GREEN}[INFO] Memperbarui package repository & memasang dependensi sistem...${NC}"
 apt update -y
 apt install -y curl wget jq python3 python3-venv python3-pip net-tools openvpn easy-rsa nginx dropbear stunnel4 fail2ban iptables-persistent screen cron iptables openssl
+
+# Enable password authentication for VPN SSH accounts. The filename is
+# intentionally ordered before cloud-init's 60-cloudimg-settings.conf on
+# images such as Oracle Linux/Ubuntu, where sshd uses the first value found.
+SSHD_CONFIG_DIR=/etc/ssh/sshd_config.d
+SSHD_VPN_CONFIG="${SSHD_CONFIG_DIR}/10-vpn-panel.conf"
+mkdir -p "${SSHD_CONFIG_DIR}"
+cat > "${SSHD_VPN_CONFIG}" <<'EOF'
+PasswordAuthentication yes
+EOF
+chmod 0644 "${SSHD_VPN_CONFIG}"
+
+# Validate before reloading so a malformed drop-in cannot disrupt SSH access.
+if sshd -t; then
+    if systemctl is-active --quiet ssh.service; then
+        systemctl reload ssh.service
+    elif systemctl is-active --quiet sshd.service; then
+        systemctl reload sshd.service
+    fi
+else
+    echo -e "${RED}[ERROR] Konfigurasi SSH tidak valid; periksa ${SSHD_VPN_CONFIG}.${NC}"
+    exit 1
+fi
 
 python3 -m venv /etc/vpn/venv
 /etc/vpn/venv/bin/pip install --upgrade pip
@@ -569,6 +608,16 @@ for unit in vpn-api.service vpn-session-guard.service; do
         systemctl start "${unit}"
     fi
 done
+
+# Configure the Xray TLS/WebSocket client profile once Xray and the API are ready.
+if [[ "${XRAY_PROXY_ENABLED}" == "1" ]]; then
+    if bash "${SCRIPT_DIR}/scripts/system/configure-xray-proxy.sh" "${XRAY_PROXY_HOST}"; then
+        :
+    else
+        echo -e "${YELLOW}[PERINGATAN] Setup profil Xray TLS/WebSocket gagal. Jalankan ulang setelah DNS A dan akses TCP 80/443 siap:${NC}"
+        echo "sudo bash /etc/vpn/scripts/system/configure-xray-proxy.sh ${XRAY_PROXY_HOST}"
+    fi
+fi
 
 clear
 echo -e "${GREEN}"
