@@ -34,7 +34,12 @@ PORT_DB=$(get_config "PORT_DROPBEAR")
 PORT_SSHWS=$(get_config "PORT_SSHWS")
 PORT_SSLWS=$(get_config "PORT_SSLWS")
 PORT_STN=$(get_config "PORT_STUNNEL")
-PORT_UDP=$(get_config "PORT_UDP")
+PORT_UDPGW=$(get_config "PORT_UDPGW")
+SSH_WS_ACTIVE=0
+if systemctl is-active --quiet vpn-ssh-ws.service 2>/dev/null \
+    && nginx -T 2>/dev/null | grep -Fq 'proxy_pass http://127.0.0.1:2222;'; then
+    SSH_WS_ACTIVE=1
+fi
 
 # ── Buat User ──────────────────────────────────────────────
 CREATE_JSON=$(printf '%s\n' "${PASSWORD}" | /usr/bin/vpn-cli create --service ssh --user "${USERNAME}" --days "${DAYS}" --password-stdin 2>/dev/null)
@@ -62,14 +67,24 @@ echo -e "  ${BWHITE}IP / Host   ${NC}: ${BCYAN}${IP}${NC}"
 echo -e "  ${BWHITE}Domain      ${NC}: ${BCYAN}${DOMAIN}${NC}"
 echo -e "  ${BWHITE}OpenSSH     ${NC}: ${PORT_SSH}"
 echo -e "  ${BWHITE}Dropbear    ${NC}: ${PORT_DB}"
-echo -e "  ${BWHITE}SSH-WS      ${NC}: ${PORT_SSHWS}"
-echo -e "  ${BWHITE}SSL-WS      ${NC}: ${PORT_SSLWS}"
-echo -e "  ${BWHITE}Stunnel     ${NC}: ${PORT_STN}"
-echo -e "  ${BWHITE}SSH-UDP     ${NC}: 1-65535"
-echo -e "  ${BWHITE}UDPGW       ${NC}: 7100-7300"
+if [[ "${SSH_WS_ACTIVE}" == "1" ]]; then
+    echo -e "  ${BWHITE}SSH-WS      ${NC}: ${PORT_SSHWS}"
+    echo -e "  ${BWHITE}WSS         ${NC}: ${PORT_SSLWS}"
+else
+    echo -e "  ${BWHITE}SSH-WS/WSS  ${NC}: belum aktif (butuh konfigurasi domain TLS/WebSocket)"
+fi
+if systemctl is-active --quiet stunnel4.service 2>/dev/null; then
+    echo -e "  ${BWHITE}Stunnel     ${NC}: ${PORT_STN}"
+else
+    echo -e "  ${BWHITE}Stunnel     ${NC}: nonaktif"
+fi
+echo -e "  ${BWHITE}UDP via SSH ${NC}: UDPGW ${PORT_UDPGW} (loopback, lewat tunnel SSH)"
 divider
-echo -e "  ${BYELLOW}Payload WSS${NC}"
-echo -e "  ${CYAN}GET wss://${DOMAIN}/ [protocol][crlf]Host: bug[crlf]Upgrade: websocket[crlf][crlf]${NC}"
+echo -e "  ${BYELLOW}Payload WebSocket${NC}"
+if [[ "${SSH_WS_ACTIVE}" == "1" ]]; then
+    echo -e "  ${CYAN}GET / HTTP/1.1[crlf]Host: ${DOMAIN}[crlf]Upgrade: websocket[crlf]Connection: Upgrade[crlf][crlf]${NC}"
+    echo -e "  ${BWHITE}Port 80: WS; port 443: WSS/TLS dengan SNI ${DOMAIN}.${NC}"
+fi
 divider
 echo ""
 press_any_key

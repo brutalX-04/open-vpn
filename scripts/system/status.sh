@@ -51,6 +51,7 @@ divider
 # ── Service Status ─────────────────────────────────────────
 echo -e "  ${BCYAN}[ CORE SERVICES ]${NC}"
 svc_status  "SSH"             "ssh"
+if systemctl list-unit-files vpn-ssh-ws.service --no-legend 2>/dev/null | grep -q .; then svc_status "SSH WebSocket" "vpn-ssh-ws"; fi
 svc_status  "Dropbear"        "dropbear"
 svc_status  "Stunnel4"        "stunnel4"
 svc_status  "Nginx"           "nginx"
@@ -87,8 +88,8 @@ VLESS_COUNT=$(registry_count vless)
 TROJAN_COUNT=$(registry_count trojan)
 
 echo -e "  ${BWHITE}SSH Users      ${NC}: ${BCYAN}${SSH_COUNT}${NC}"
-echo -e "  ${BWHITE}OpenVPN TCP    ${NC}: ${BCYAN}${OVPN_TCP_CONN} connected${NC}"
-echo -e "  ${BWHITE}OpenVPN UDP    ${NC}: ${BPURPLE}${OVPN_UDP_CONN} connected${NC}"
+echo -e "  ${BWHITE}OpenVPN TCP    ${NC}: ${BCYAN}${OVPN_TCP_CONN}${NC}"
+echo -e "  ${BWHITE}OpenVPN UDP    ${NC}: ${BCYAN}${OVPN_UDP_CONN}${NC}"
 echo -e "  ${BWHITE}VMess Accounts ${NC}: ${BCYAN}${VMESS_COUNT}${NC}"
 echo -e "  ${BWHITE}VLESS Accounts ${NC}: ${BCYAN}${VLESS_COUNT}${NC}"
 echo -e "  ${BWHITE}Trojan Accounts${NC}: ${BCYAN}${TROJAN_COUNT}${NC}"

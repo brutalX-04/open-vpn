@@ -124,6 +124,12 @@ cp -a "${SCRIPT_DIR}/api/." /etc/vpn/api/
 cp -a "${SCRIPT_DIR}/vpnctl/." /etc/vpn/vpnctl/
 rm -f /etc/vpn/scripts/system/vpn-tendang /etc/vpn/scripts/system/openvpn-single-session.sh
 
+# Install the SSH WebSocket bridge with the scripts; it is enabled when a
+# public API/Xray TLS front proxy is configured.
+if [[ -f "${SCRIPT_DIR}/scripts/system/ssh-ws-bridge.py" ]]; then
+    install -m 0755 "${SCRIPT_DIR}/scripts/system/ssh-ws-bridge.py" /etc/vpn/scripts/system/ssh-ws-bridge.py
+fi
+
 # Clean up legacy installation before configuring current services.
 if [[ -d /etc/vpn/bot || -e /etc/systemd/system/bot-vpn.service ]]; then
     "${SCRIPT_DIR}/scripts/system/remove-bot.sh"
@@ -155,6 +161,7 @@ SSHD_VPN_CONFIG="${SSHD_CONFIG_DIR}/10-vpn-panel.conf"
 mkdir -p "${SSHD_CONFIG_DIR}"
 cat > "${SSHD_VPN_CONFIG}" <<'EOF'
 PasswordAuthentication yes
+AllowTcpForwarding yes
 EOF
 chmod 0644 "${SSHD_VPN_CONFIG}"
 
@@ -167,8 +174,10 @@ if ! sshd -t; then
 fi
 SSHD_PASSWORD_AUTH=$(sshd -T -C user=vpn-auth-check,host=localhost,addr=127.0.0.1 2>/dev/null \
     | awk '$1 == "passwordauthentication" { print $2; exit }')
-if [[ "${SSHD_PASSWORD_AUTH}" != "yes" ]]; then
-    echo -e "${RED}[ERROR] sshd masih menonaktifkan autentikasi password (PasswordAuthentication=${SSHD_PASSWORD_AUTH:-unknown}).${NC}"
+SSHD_TCP_FORWARDING=$(sshd -T -C user=vpn-auth-check,host=localhost,addr=127.0.0.1 2>/dev/null \
+    | awk '$1 == "allowtcpforwarding" { print $2; exit }')
+if [[ "${SSHD_PASSWORD_AUTH}" != "yes" || "${SSHD_TCP_FORWARDING}" != "yes" ]]; then
+    echo -e "${RED}[ERROR] sshd harus mengizinkan autentikasi password dan TCP forwarding (PasswordAuthentication=${SSHD_PASSWORD_AUTH:-unknown}, AllowTcpForwarding=${SSHD_TCP_FORWARDING:-unknown}).${NC}"
     echo -e "${YELLOW}Periksa Include/Match di /etc/ssh/sshd_config dan file di /etc/ssh/sshd_config.d/.${NC}"
     exit 1
 fi
